@@ -1,0 +1,64 @@
+# REQUISITOS PREVIOS (una sola vez)
+winget install Rustlang.Rust.GNU
+winget install OpenJS.NodeJS.LTS
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.NativeDesktop --quiet"
+
+rustc --version
+node --version
+npm --version
+
+# CLONAR / COPIAR PROYECTO
+cd C:\Users\emman\Desktop\TImbrev1
+
+# INSTALAR DEPENDENCIAS FRONTEND
+cd app
+npm install
+
+# COMPILAR BACKEND RUST (RELEASE)
+cd ..\src-tauri
+cargo build --release
+
+# DESARROLLO DIARIO (2 TERMINALES)
+# TERMINAL 1:
+cd src-tauri
+cargo tauri dev
+
+# TERMINAL 2 (otra ventana):
+cd app
+npm run dev
+
+# BUILD FINAL (.MSI INSTALADOR)
+cargo tauri build
+
+# GENERA: src-tauri\target\release\bundle\msi\TimbreEscolar_1.0.0_x64_en-US.msi
+
+# COMANDOS ÚTILES
+rustc --version
+node --version
+npm --version
+cargo --version
+
+cargo clean
+cd ..\app && npm cache clean --force
+
+cargo clean
+cd ..\app && rm -rf node_modules package-lock.json
+npm install
+cd ..\src-tauri
+cargo build --release
+
+cargo tauri build
+
+ls target\release\bundle\msi\*.msi
+
+# DESARROLLO DIARIO (2 TERMINALES)
+# TERMINAL 1:
+cd src-tauri
+cargo tauri dev
+
+# TERMINAL 2 (otra ventana):
+cd app
+npm run dev
+
+# BUILD FINAL (.MSI)
+cargo tauri build

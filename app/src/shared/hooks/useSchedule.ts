@@ -1,0 +1,181 @@
+import { useState, useEffect, useCallback } from 'react';
+import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
+import { useWebSocket } from './useWebSocket';
+import { useAuth } from './useAuth';
+import {
+  journeysRepo,
+  templatesRepo,
+  exceptionsRepo,
+  eventsRepo,
+  configRepo
+} from '@core/storage';
+import type { JourneySchedule, ScheduleTemplate, CalendarException, BellEventLog, DeviceConfig, DayOfWeek } from '@core/schedule-engine';
+import { resolveScheduleForDate, getActiveScheduleForNow } from '@core/schedule-engine/priority-resolver';
+
+const TIMEZONE = 'America/Guatemala';
+
+export function useSchedule() {
+  const { connected, deviceStatus, sendMessage } = useWebSocket();
+  const { isAuthenticated: _isAuthenticated } = useAuth();
+
+  const [journeys, setJourneys] = useState<JourneySchedule[]>([]);
+  const [templates, setTemplates] = useState<ScheduleTemplate[]>([]);
+  const [exceptions, setExceptions] = useState<CalendarException[]>([]);
+  const [events, setEvents] = useState<BellEventLog[]>([]);
+  const [config, setConfig] = useState<DeviceConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeJourney, setActiveJourney] = useState<'matutina' | 'vespertina'>('matutina');
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [nextEvent, setNextEvent] = useState<{ name: string; at: string; inMs: number } | null>(null);
+
+  useEffect(() => {
+    loadAllData();
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+      updateNextEvent();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadAllData = async () => {
+    try {
+      const [j, t, e, ev, c] = await Promise.all([
+        journeysRepo.getAll(),
+        templatesRepo.getAll(),
+        exceptionsRepo.getAll(),
+        eventsRepo.getAll(50),
+        configRepo.get()
+      ]);
+      setJourneys(j);
+      setTemplates(t);
+      setExceptions(e);
+      setEvents(ev);
+      setConfig(c);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateNextEvent = () => {
+    const now = toZonedTime(new Date(), TIMEZONE);
+    const currentTimeOnly = { hours: now.getHours(), minutes: now.getMinutes() };
+    const today = now.getDay() as DayOfWeek;
+
+    const activeJourneySchedule = journeys.find(j => j.journey === activeJourney);
+    if (!activeJourneySchedule) return;
+
+    const resolved = resolveScheduleForDate(
+      format(now, 'yyyy-MM-dd'),
+      activeJourney,
+      journeys,
+      templates,
+      exceptions
+    );
+
+    const todayEvents = resolved.events.filter(e => e.activeDays.includes(today));
+    const upcoming = todayEvents
+      .filter(e => e.bellTime.hours > currentTimeOnly.hours || (e.bellTime.hours === currentTimeOnly.hours && e.bellTime.minutes > currentTimeOnly.minutes))
+      .sort((a, b) => a.bellTime.hours - b.bellTime.hours || a.bellTime.minutes - b.bellTime.minutes)[0];
+
+    if (upcoming) {
+      const eventTime = new Date(now);
+      eventTime.setHours(upcoming.bellTime.hours, upcoming.bellTime.minutes, 0, 0);
+      const diffMs = eventTime.getTime() - now.getTime();
+      setNextEvent({ name: upcoming.name, at: `${upcoming.bellTime.hours.toString().padStart(2, '0')}:${upcoming.bellTime.minutes.toString().padStart(2, '0')}`, inMs: diffMs });
+    } else {
+      setNextEvent(null);
+    }
+  };
+
+  const saveJourney = async (journey: JourneySchedule) => {
+    await journeysRepo.put(journey);
+    setJourneys(prev => prev.map(j => j.journey === journey.journey ? journey : j));
+  };
+
+  const saveTemplate = async (template: ScheduleTemplate) => {
+    await templatesRepo.put(template);
+    setTemplates(prev => [...prev.filter(t => t.id !== template.id), template]);
+  };
+
+  const deleteTemplate = async (id: string) => {
+    await templatesRepo.delete(id);
+    setTemplates(prev => prev.filter(t => t.id !== id));
+  };
+
+  const saveException = async (exception: CalendarException) => {
+    await exceptionsRepo.put(exception);
+    setExceptions(prev => [...prev.filter(e => e.id !== exception.id), exception]);
+  };
+
+  const deleteException = async (id: string) => {
+    await exceptionsRepo.delete(id);
+    setExceptions(prev => prev.filter(e => e.id !== id));
+  };
+
+  const syncToDevice = async () => {
+    if (!connected) return false;
+
+    const payload = {
+      version: Date.now(),
+      hash: '',
+      timestamp: new Date().toISOString(),
+      deviceId: config[0]?.deviceId || 'ESP32',
+      journeys,
+      templates,
+      exceptions,
+      deviceConfig: config[0] || {}
+    };
+
+    sendMessage('sync:request', payload);
+    return true;
+  };
+
+  const ringManualBell = async (durationSeconds: number) => {
+    sendMessage('bell:manual', { durationSeconds });
+  };
+
+  const testBell = async (durationSeconds: number) => {
+    sendMessage('bell:test', { durationSeconds });
+  };
+
+  const getResolvedScheduleForDate = useCallback((date: string, journey: 'matutina' | 'vespertina') => {
+    return resolveScheduleForDate(date, journey, journeys, templates, exceptions);
+  }, [journeys, templates, exceptions]);
+
+  const getActiveSchedules = useCallback(() => {
+    return getActiveScheduleForNow(journeys, templates, exceptions);
+  }, [journeys, templates, exceptions]);
+
+  return {
+    loading,
+    journeys,
+    templates,
+    exceptions,
+    events,
+    config,
+    activeJourney,
+    setActiveJourney,
+    currentTime,
+    nextEvent,
+    connected,
+    deviceStatus,
+    saveJourney,
+    saveTemplate,
+    deleteTemplate,
+    saveException,
+    deleteException,
+    syncToDevice,
+    ringManualBell,
+    testBell,
+    sendMessage,
+    getResolvedScheduleForDate,
+    getActiveSchedules,
+    refresh: loadAllData
+  };
+}

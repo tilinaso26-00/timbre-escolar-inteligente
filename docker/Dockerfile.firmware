@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /firmware
+
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    wget \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir platformio
+
+COPY platformio.ini ./
+RUN pio run --environment esp32dev 2>&1 || true
+
+COPY . .
+
+CMD ["pio", "run", "--target", "upload"]
