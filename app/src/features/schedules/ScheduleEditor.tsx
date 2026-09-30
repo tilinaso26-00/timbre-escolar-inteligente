@@ -8,6 +8,7 @@ import { Modal } from '@shared/ui/Modal';
 import { useToast } from '@shared/ui/Toast';
 import { useSchedule } from '@shared/hooks/useSchedule';
 import { useScheduleEditor } from './hooks/useScheduleEditor';
+import type { JourneySchedule } from '@core/schedule-engine';
 import { JourneyTabs } from './components/JourneyTabs';
 import { PeriodAdjuster } from './components/PeriodAdjuster';
 import { SchedulePreview } from './components/SchedulePreview';
@@ -67,9 +68,9 @@ export function ScheduleEditor() {
 
   const handleImport = () => {
     try {
-      const data = JSON.parse(importJson);
-      if (data.journey && data.events) {
-        editor.setJourney(data);
+      const data = JSON.parse(importJson) as Partial<JourneySchedule> | null;
+      if (data && data.journey && data.events) {
+        editor.setJourney(data as JourneySchedule);
         setShowImportModal(false);
         setImportJson('');
         addToast({ type: 'success', title: 'Importado', message: 'Horario cargado desde JSON' });

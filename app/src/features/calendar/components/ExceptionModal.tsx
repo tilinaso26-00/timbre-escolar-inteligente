@@ -43,8 +43,6 @@ export function ExceptionModal({
   onSave,
   onDelete,
 }: ExceptionModalProps) {
-  if (!date || !isOpen) return null;
-
   const [selectedType, setSelectedType] = useState<typeof EXCEPTION_TYPES[number]['value']>('normal');
   const [scheduleId, setScheduleId] = useState<string>('');
   const [customName, setCustomName] = useState('');
@@ -70,6 +68,8 @@ export function ExceptionModal({
       setCustomEvents([]);
     }
   }, [isOpen, existingException]);
+
+  if (!date || !isOpen) return null;
 
   const handleSave = () => {
     if (selectedType === 'custom' && showCustomEvents && customEvents.length === 0) {

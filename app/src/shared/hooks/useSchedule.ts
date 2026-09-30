@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { useWebSocket } from './useWebSocket';
-import { useAuth } from './useAuth';
 import {
   journeysRepo,
   templatesRepo,
@@ -17,7 +16,6 @@ const TIMEZONE = 'America/Guatemala';
 
 export function useSchedule() {
   const { connected, deviceStatus, sendMessage } = useWebSocket();
-  const { isAuthenticated: _isAuthenticated } = useAuth();
 
   const [journeys, setJourneys] = useState<JourneySchedule[]>([]);
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([]);
@@ -31,14 +29,6 @@ export function useSchedule() {
 
   useEffect(() => {
     loadAllData();
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(new Date());
-      updateNextEvent();
-    }, 1000);
-    return () => clearInterval(interval);
   }, []);
 
   const loadAllData = async () => {
@@ -62,13 +52,16 @@ export function useSchedule() {
     }
   };
 
-  const updateNextEvent = () => {
+  const updateNextEvent = useCallback(() => {
     const now = toZonedTime(new Date(), TIMEZONE);
     const currentTimeOnly = { hours: now.getHours(), minutes: now.getMinutes() };
     const today = now.getDay() as DayOfWeek;
 
     const activeJourneySchedule = journeys.find(j => j.journey === activeJourney);
-    if (!activeJourneySchedule) return;
+    if (!activeJourneySchedule) {
+      setNextEvent(null);
+      return;
+    }
 
     const resolved = resolveScheduleForDate(
       format(now, 'yyyy-MM-dd'),
@@ -91,11 +84,23 @@ export function useSchedule() {
     } else {
       setNextEvent(null);
     }
-  };
+  }, [journeys, templates, exceptions, activeJourney]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+      updateNextEvent();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [updateNextEvent]);
 
   const saveJourney = async (journey: JourneySchedule) => {
     await journeysRepo.put(journey);
-    setJourneys(prev => prev.map(j => j.journey === journey.journey ? journey : j));
+    setJourneys(prev =>
+      prev.some(j => j.journey === journey.journey)
+        ? prev.map(j => (j.journey === journey.journey ? journey : j))
+        : [...prev, journey]
+    );
   };
 
   const saveTemplate = async (template: ScheduleTemplate) => {
@@ -137,11 +142,11 @@ export function useSchedule() {
   };
 
   const ringManualBell = async (durationSeconds: number) => {
-    sendMessage('bell:manual', { durationSeconds });
+    sendMessage('bell:manual', { durationSec: durationSeconds });
   };
 
   const testBell = async (durationSeconds: number) => {
-    sendMessage('bell:test', { durationSeconds });
+    sendMessage('bell:test', { durationSec: durationSeconds });
   };
 
   const getResolvedScheduleForDate = useCallback((date: string, journey: 'matutina' | 'vespertina') => {

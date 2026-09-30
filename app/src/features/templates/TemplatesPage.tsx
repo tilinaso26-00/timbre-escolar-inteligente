@@ -57,12 +57,14 @@ export function TemplatesPage() {
 
   const handleImportTemplate = () => {
     try {
-      const data = JSON.parse(importJson);
-      if (data.id && data.name && data.journey && data.events) {
-        const template = {
+      const data = JSON.parse(importJson) as Partial<ScheduleTemplate> | null;
+      if (data && data.id && data.name && data.journey && data.events) {
+        const template: ScheduleTemplate = {
           ...data,
           id: data.id || `tpl-${Date.now()}`,
+          name: data.name,
           journey: data.journey === localActiveJourney ? data.journey : localActiveJourney,
+          events: data.events,
           createdAt: data.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };

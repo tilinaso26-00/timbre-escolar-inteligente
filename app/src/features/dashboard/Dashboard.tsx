@@ -74,7 +74,7 @@ export function Dashboard() {
       const now = toZonedTime(new Date(), TIMEZONE);
       setLastBell({ name: 'Timbre Manual', time: format(now, 'HH:mm:ss', { locale: es }), type: 'manual' });
       addToast({ type: 'success', title: 'Timbre activado', message: `Timbre manual sonó por ${manualBellDuration} segundo(s)` });
-    } catch (error) {
+    } catch {
       addToast({ type: 'error', title: 'Error', message: 'No se pudo activar el timbre' });
     } finally {
       setRinging(false);

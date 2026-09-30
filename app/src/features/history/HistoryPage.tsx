@@ -94,12 +94,12 @@ export function HistoryPage() {
     return sortConfig.direction === 'asc' ? <ChevronUp className="h-4 w-4 text-primary-500" /> : <ChevronDown className="h-4 w-4 text-primary-500" />;
   };
 
-  const SortableHeader = ({ key, label }: { key: keyof BellEventLog; label: string }) => (
+  const SortableHeader = ({ column, label }: { column: keyof BellEventLog; label: string }) => (
     <button
-      onClick={() => handleSort(key)}
+      onClick={() => handleSort(column)}
       className="flex items-center gap-1 px-3 py-2 text-left text-sm font-medium text-gray-700 hover:text-gray-900"
     >
-      {label} {getSortIcon(key)}
+      {label} {getSortIcon(column)}
     </button>
   );
 
@@ -217,11 +217,11 @@ export function HistoryPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th><SortableHeader key="timestamp" label="Fecha/Hora" /></th>
-                    <th><SortableHeader key="eventName" label="Evento" /></th>
-                    <th><SortableHeader key="eventType" label="Tipo" /></th>
-                    <th><SortableHeader key="journey" label="Jornada" /></th>
-                    <th><SortableHeader key="triggeredBy" label="Origen" /></th>
+                    <th><SortableHeader column="timestamp" label="Fecha/Hora" /></th>
+                    <th><SortableHeader column="eventName" label="Evento" /></th>
+                    <th><SortableHeader column="eventType" label="Tipo" /></th>
+                    <th><SortableHeader column="journey" label="Jornada" /></th>
+                    <th><SortableHeader column="triggeredBy" label="Origen" /></th>
                     <th className="px-3 py-2 text-left">Ejecutado</th>
                     <th className="px-3 py-2 text-left">Duración</th>
                     <th className="px-3 py-2 text-left">Dispositivo</th>

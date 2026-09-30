@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { liveQuery } from 'dexie';
 import type { BellEventLog } from '@core/schedule-engine';
 import { eventsRepo } from '@core/storage';
 
@@ -36,11 +37,32 @@ export function useHistory() {
     }
   }, []);
 
+  useEffect(() => {
+    const sub = liveQuery(() => eventsRepo.getAll(1000)).subscribe({
+      next: data => {
+        setEvents(data);
+        setLoading(false);
+      },
+      error: error => {
+        console.error('Error loading history:', error);
+        setLoading(false);
+      },
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
   const filteredEvents = useMemo(() => {
+    const dateFromIso = filters.dateFrom
+      ? new Date(`${filters.dateFrom}T00:00:00`).toISOString()
+      : null;
+    const dateToIso = filters.dateTo
+      ? new Date(`${filters.dateTo}T23:59:59.999`).toISOString()
+      : null;
+
     return events
       .filter(e => {
-        if (filters.dateFrom && e.timestamp < filters.dateFrom) return false;
-        if (filters.dateTo && e.timestamp > filters.dateTo) return false;
+        if (dateFromIso && e.timestamp < dateFromIso) return false;
+        if (dateToIso && e.timestamp > dateToIso) return false;
         if (filters.journey !== 'all' && e.journey !== filters.journey) return false;
         if (filters.eventType !== 'all' && e.eventType !== filters.eventType) return false;
         if (filters.triggeredBy !== 'all' && e.triggeredBy !== filters.triggeredBy) return false;

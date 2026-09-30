@@ -17,7 +17,12 @@ export function resolveScheduleForDate(
   templates: ScheduleTemplate[],
   exceptions: CalendarException[]
 ): ResolvedSchedule {
-  const dayOfWeek = new Date(date).getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  const [year, month, day] = date.split('-').map(Number);
+  const dayOfWeek = new Date(
+    Number.isFinite(year) ? year : 1970,
+    Number.isFinite(month) ? month - 1 : 0,
+    Number.isFinite(day) ? day : 1
+  ).getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
   const specificException = exceptions.find(
     e => e.date === date && e.journey === journey
@@ -113,7 +118,11 @@ export function getActiveScheduleForNow(
   exceptions: CalendarException[]
 ): ResolvedSchedule[] {
   const now = new Date();
-  const dateStr = now.toISOString().split('T')[0];
+  const dateStr = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
   const results: ResolvedSchedule[] = [];
 
   for (const journey of journeys) {

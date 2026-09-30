@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { JourneySchedule, ScheduleEvent, TimeOnly, EventType } from '@core/schedule-engine';
 import { recalculatePeriods } from '@core/schedule-engine/period-calculator';
@@ -52,7 +52,7 @@ function createDefaultEvent(journey: JourneySchedule, type: EventType, index: nu
   const now = new Date().toISOString();
   let bellTime: TimeOnly = { hours: 7, minutes: 0 };
   let startTime: TimeOnly = { hours: 7, minutes: 0 };
-  let duration = journey.defaultPeriodMinutes;
+  const duration = journey.defaultPeriodMinutes;
 
   if (type === 'entrada') {
     bellTime = journey.entryTime;
@@ -94,6 +94,31 @@ export function useScheduleEditor(initialJourney?: JourneySchedule | null) {
     validationErrors: [],
     preview: [],
   });
+
+  const adoptedRef = useRef<{ id: string; updatedAt: string } | null>(
+    initialJourney ? { id: initialJourney.journey, updatedAt: initialJourney.updatedAt } : null
+  );
+
+  useEffect(() => {
+    if (!initialJourney) return;
+
+    const next = { id: initialJourney.journey, updatedAt: initialJourney.updatedAt };
+    const adopted = adoptedRef.current;
+    if (adopted && adopted.id === next.id && adopted.updatedAt === next.updatedAt) return;
+    adoptedRef.current = next;
+
+    setState(prev => {
+      const sameJourney = prev.journey?.journey === next.id;
+      if (sameJourney && prev.isDirty) return prev;
+      return {
+        journey: initialJourney,
+        events: initialJourney.events,
+        isDirty: false,
+        validationErrors: validateSchedule(initialJourney).errors,
+        preview: generatePreview(initialJourney),
+      };
+    });
+  }, [initialJourney]);
 
   const recalcPreview = useCallback((events: ScheduleEvent[], journey: JourneySchedule) => {
     if (!journey) return [];

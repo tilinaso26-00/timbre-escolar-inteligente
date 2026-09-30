@@ -53,7 +53,7 @@ export function SettingsPage() {
         addToast({ type: 'success', title: 'Exportado', message: 'Configuración descargada como CSV' });
       }
       setShowExportModal(false);
-    } catch (error) {
+    } catch {
       addToast({ type: 'error', title: 'Error', message: 'No se pudo exportar' });
     }
   };
@@ -65,7 +65,7 @@ export function SettingsPage() {
       if (result.success) {
         addToast({ type: 'success', title: 'Importado', message: 'Configuración importada, recargue la página' });
       }
-    } catch (error) {
+    } catch {
       setImportResult({ success: false, message: 'JSON inválido' });
     }
   };

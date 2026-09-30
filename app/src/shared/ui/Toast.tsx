@@ -44,11 +44,6 @@ export function ToastProvider({ children }: ToastProviderProps) {
     const id = Math.random().toString(36).slice(2, 9);
     const newToast = { ...toast, id };
     setToasts(prev => [...prev, newToast]);
-
-    if (toast.duration !== 0) {
-      setTimeout(() => removeToast(id), toast.duration ?? 5000);
-    }
-
     return id;
   }, []);
 
@@ -86,6 +81,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
+    if (toast.duration === 0) return undefined;
     const timer = setTimeout(() => {
       setVisible(false);
       setTimeout(() => onRemove(toast.id), 300);
