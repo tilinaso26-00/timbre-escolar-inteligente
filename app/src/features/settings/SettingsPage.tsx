@@ -8,11 +8,15 @@ import { Modal } from '@shared/ui/Modal';
 import { useToast } from '@shared/ui/Toast';
 import { useAuth } from '@shared/hooks/useAuth';
 import { useSchedule } from '@shared/hooks/useSchedule';
+import { getWsEndpoint, configureWsEndpoint } from '@shared/hooks/useWebSocket';
 import { DemoModePanel } from './components/DemoModePanel';
 import { exportToJSON, exportToCSV, importFromJSON, downloadBackup, generateBackupFilename } from '@core/storage/backup-manager';
 
 export function SettingsPage() {
-  const { user } = useAuth();
+  const user = useAuth(state => state.user);
+  const changePassword = useAuth(state => state.changePassword);
+  const idleTimeoutMinutes = useAuth(state => state.idleTimeoutMinutes);
+  const setIdleTimeout = useAuth(state => state.setIdleTimeout);
   const { config } = useSchedule();
   const { addToast } = useToast();
 
@@ -26,6 +30,7 @@ export function SettingsPage() {
   const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const deviceConfig = config[0];
+  const [wsEndpoint, setWsEndpoint] = useState(() => getWsEndpoint());
 
   const tabs = [
     { id: 'general' as const, label: 'General', icon: User },
@@ -70,13 +75,25 @@ export function SettingsPage() {
     }
   };
 
-  const handleChangePassword = () => {
+  const handleSaveEndpoint = () => {
+    const url = wsEndpoint.url.trim();
+    if (!/^wss?:\/\//.test(url)) {
+      addToast({ type: 'error', title: 'Error', message: 'La URL debe empezar con ws:// o wss://' });
+      return;
+    }
+    configureWsEndpoint(url, wsEndpoint.token);
+    setWsEndpoint(getWsEndpoint());
+    addToast({ type: 'success', title: 'Conexión actualizada', message: 'Reconectando con el dispositivo' });
+  };
+
+  const handleChangePassword = async () => {
     if (passwordForm.new !== passwordForm.confirm) {
       addToast({ type: 'error', title: 'Error', message: 'Las contraseñas no coinciden' });
       return;
     }
-    if (passwordForm.new.length < 6) {
-      addToast({ type: 'error', title: 'Error', message: 'La contraseña debe tener al menos 6 caracteres' });
+    const result = await changePassword(passwordForm.current, passwordForm.new);
+    if (!result.ok) {
+      addToast({ type: 'error', title: 'Error', message: result.error || 'No se pudo cambiar la contraseña' });
       return;
     }
     addToast({ type: 'success', title: 'Actualizado', message: 'Contraseña cambiada correctamente' });
@@ -189,6 +206,26 @@ export function SettingsPage() {
 
       {activeTab === 'network' && (
         <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-gray-500">Conexión con el dispositivo</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="ws-url" className="block text-sm font-medium text-gray-700 mb-1">URL del WebSocket</label>
+                  <Input id="ws-url" value={wsEndpoint.url} onChange={e => setWsEndpoint({ ...wsEndpoint, url: e.target.value })} className="w-full" placeholder="ws://192.168.4.1:81" />
+                </div>
+                <div>
+                  <label htmlFor="ws-token" className="block text-sm font-medium text-gray-700 mb-1">Token del dispositivo</label>
+                  <Input id="ws-token" value={wsEndpoint.token} onChange={e => setWsEndpoint({ ...wsEndpoint, token: e.target.value })} className="w-full" />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">El token debe coincidir con el configurado en el ESP32. Ejemplo de red del dispositivo: ws://192.168.4.1:81</p>
+              <Button onClick={handleSaveEndpoint}>Guardar y reconectar</Button>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium text-gray-500">Configuración WiFi</CardTitle>
@@ -343,16 +380,16 @@ export function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña actual</label>
-                  <Input type="password" value={passwordForm.current} onChange={e => setPasswordForm({ ...passwordForm, current: e.target.value })} className="w-full" />
+                  <label htmlFor="sec-current" className="block text-sm font-medium text-gray-700 mb-1">Contraseña actual</label>
+                  <Input id="sec-current" type="password" value={passwordForm.current} onChange={e => setPasswordForm({ ...passwordForm, current: e.target.value })} className="w-full" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
-                  <Input type="password" value={passwordForm.new} onChange={e => setPasswordForm({ ...passwordForm, new: e.target.value })} className="w-full" minLength={6} />
+                  <label htmlFor="sec-new" className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
+                  <Input id="sec-new" type="password" value={passwordForm.new} onChange={e => setPasswordForm({ ...passwordForm, new: e.target.value })} className="w-full" minLength={6} />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar nueva contraseña</label>
-                  <Input type="password" value={passwordForm.confirm} onChange={e => setPasswordForm({ ...passwordForm, confirm: e.target.value })} className="w-full" minLength={6} />
+                  <label htmlFor="sec-confirm" className="block text-sm font-medium text-gray-700 mb-1">Confirmar nueva contraseña</label>
+                  <Input id="sec-confirm" type="password" value={passwordForm.confirm} onChange={e => setPasswordForm({ ...passwordForm, confirm: e.target.value })} className="w-full" minLength={6} />
                 </div>
               </div>
               <Button onClick={handleChangePassword} disabled={!passwordForm.current || !passwordForm.new || !passwordForm.confirm}>
@@ -387,9 +424,13 @@ export function SettingsPage() {
                   <p className="font-medium text-gray-900">Tiempo de expiración</p>
                   <p className="text-sm text-gray-500">Cerrar sesión automáticamente tras inactividad</p>
                 </div>
-                <select className="text-sm border border-gray-300 rounded px-2 py-1 bg-white">
+                <select
+                  className="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
+                  value={idleTimeoutMinutes}
+                  onChange={event => setIdleTimeout(Number(event.target.value))}
+                >
                   <option value="30">30 minutos</option>
-                  <option value="60" selected>1 hora</option>
+                  <option value="60">1 hora</option>
                   <option value="240">4 horas</option>
                   <option value="480">8 horas</option>
                   <option value="0">Nunca</option>
@@ -418,16 +459,16 @@ export function SettingsPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña actual</label>
-            <Input type="password" value={passwordForm.current} onChange={e => setPasswordForm({ ...passwordForm, current: e.target.value })} className="w-full" />
+            <label htmlFor="sec-modal-current" className="block text-sm font-medium text-gray-700 mb-1">Contraseña actual</label>
+            <Input id="sec-modal-current" type="password" value={passwordForm.current} onChange={e => setPasswordForm({ ...passwordForm, current: e.target.value })} className="w-full" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
-            <Input type="password" value={passwordForm.new} onChange={e => setPasswordForm({ ...passwordForm, new: e.target.value })} className="w-full" minLength={6} />
+            <label htmlFor="sec-modal-new" className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
+            <Input id="sec-modal-new" type="password" value={passwordForm.new} onChange={e => setPasswordForm({ ...passwordForm, new: e.target.value })} className="w-full" minLength={6} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar nueva contraseña</label>
-            <Input type="password" value={passwordForm.confirm} onChange={e => setPasswordForm({ ...passwordForm, confirm: e.target.value })} className="w-full" minLength={6} />
+            <label htmlFor="sec-modal-confirm" className="block text-sm font-medium text-gray-700 mb-1">Confirmar nueva contraseña</label>
+            <Input id="sec-modal-confirm" type="password" value={passwordForm.confirm} onChange={e => setPasswordForm({ ...passwordForm, confirm: e.target.value })} className="w-full" minLength={6} />
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="outline" onClick={() => { setShowChangePassword(false); setPasswordForm({ current: '', new: '', confirm: '' }); }}>Cancelar</Button>

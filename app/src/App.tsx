@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ToastProvider } from '@shared/ui/Toast';
@@ -12,6 +13,36 @@ import { TemplatesPage } from '@features/templates/TemplatesPage';
 import { HistoryPage } from '@features/history/HistoryPage';
 import { DevicePage } from '@features/device/DevicePage';
 import { SettingsPage } from '@features/settings/SettingsPage';
+
+function SessionWatcher() {
+  const isAuthenticated = useAuth(state => state.isAuthenticated);
+  const idleTimeoutMinutes = useAuth(state => state.idleTimeoutMinutes);
+  const logout = useAuth(state => state.logout);
+  const touch = useAuth(state => state.touch);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+
+    if (!useAuth.getState().lastActivityAt) touch();
+
+    const onActivity = () => touch();
+    const events: (keyof WindowEventMap)[] = ['pointerdown', 'keydown', 'wheel'];
+    events.forEach(event => window.addEventListener(event, onActivity, { passive: true }));
+
+    const timer = window.setInterval(() => {
+      const last = useAuth.getState().lastActivityAt;
+      if (!last || idleTimeoutMinutes <= 0) return;
+      if (Date.now() - last > idleTimeoutMinutes * 60000) logout();
+    }, 10000);
+
+    return () => {
+      events.forEach(event => window.removeEventListener(event, onActivity));
+      window.clearInterval(timer);
+    };
+  }, [isAuthenticated, idleTimeoutMinutes, logout, touch]);
+
+  return null;
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -61,6 +92,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
+        <SessionWatcher />
         <AppRoutes />
         <Toaster position="bottom-right" />
       </ToastProvider>

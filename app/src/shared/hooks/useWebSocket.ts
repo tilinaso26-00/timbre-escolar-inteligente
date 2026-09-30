@@ -35,6 +35,7 @@ export interface WSNotification {
 const AUTH_TOKEN = 'timbre-escolar-2024';
 const DEFAULT_WS_URL = 'ws://localhost:81';
 const WS_URL_STORAGE_KEY = 'timbre.wsUrl';
+const WS_TOKEN_STORAGE_KEY = 'timbre.wsToken';
 
 export function resolveWsUrl(): string {
   try {
@@ -44,6 +45,16 @@ export function resolveWsUrl(): string {
     /* localStorage no disponible */
   }
   return (import.meta.env.VITE_WS_URL as string | undefined) || DEFAULT_WS_URL;
+}
+
+export function resolveWsToken(): string {
+  try {
+    const stored = localStorage.getItem(WS_TOKEN_STORAGE_KEY);
+    if (stored) return stored;
+  } catch {
+    /* localStorage no disponible */
+  }
+  return (import.meta.env.VITE_WS_TOKEN as string | undefined) || AUTH_TOKEN;
 }
 
 type Listener = (state: BridgeState) => void;
@@ -332,7 +343,7 @@ function createBridge(): Bridge {
         return false;
       }
       const body = asRecord(data);
-      ws.send(JSON.stringify({ event, data: body, token: AUTH_TOKEN }));
+      ws.send(JSON.stringify({ event, data: body, token: resolveWsToken() }));
       return true;
     },
     reconnect: () => {
@@ -348,6 +359,28 @@ function createBridge(): Bridge {
 }
 
 const bridge = createBridge();
+
+export function getWsEndpoint(): { url: string; token: string } {
+  return { url: resolveWsUrl(), token: resolveWsToken() };
+}
+
+export function configureWsEndpoint(url: string, token: string): void {
+  const previousUrl = resolveWsUrl();
+  const cleanUrl = url.trim() || DEFAULT_WS_URL;
+  const cleanToken = token.trim() || AUTH_TOKEN;
+  try {
+    localStorage.setItem(WS_URL_STORAGE_KEY, cleanUrl);
+  } catch {
+    /* localStorage no disponible */
+  }
+  try {
+    localStorage.setItem(WS_TOKEN_STORAGE_KEY, cleanToken);
+  } catch {
+    /* localStorage no disponible */
+  }
+  if (cleanUrl === previousUrl) bridge.reconnect();
+  else bridge.start(cleanUrl);
+}
 
 export function useWebSocket(url?: string): UseWebSocketReturn {
   const { addToast } = useToast();
