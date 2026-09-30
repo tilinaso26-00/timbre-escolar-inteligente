@@ -200,19 +200,23 @@ export function CalendarView({
 
                 if (!dayInfo) {
                   return (
-                    <div {...props} className="rdp-day_button h-24 w-full p-2" aria-hidden="true" />
+                    <td {...props}>
+                      <div className="rdp-day_button h-24 w-full p-2" aria-hidden="true" />
+                    </td>
                   );
                 }
 
                 return (
-                  <DateCell
-                    dayInfo={dayInfo}
-                    isSelected={selected}
-                    isToday={today}
-                    isCurrentMonth={isCurrent}
-                    onClick={() => handleDateClick(day.date)}
-                    onRightClick={e => handleDateRightClick(e, day.date)}
-                  />
+                  <td {...props}>
+                    <DateCell
+                      dayInfo={dayInfo}
+                      isSelected={selected}
+                      isToday={today}
+                      isCurrentMonth={isCurrent}
+                      onClick={() => handleDateClick(day.date)}
+                      onRightClick={e => handleDateRightClick(e, day.date)}
+                    />
+                  </td>
                 );
               },
             }}

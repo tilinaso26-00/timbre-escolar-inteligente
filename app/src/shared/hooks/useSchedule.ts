@@ -9,6 +9,7 @@ import {
   eventsRepo,
   configRepo
 } from '@core/storage';
+import { seedIfEmpty } from '@core/storage/seed';
 import type { JourneySchedule, ScheduleTemplate, CalendarException, BellEventLog, DeviceConfig, DayOfWeek } from '@core/schedule-engine';
 import { resolveScheduleForDate, getActiveScheduleForNow } from '@core/schedule-engine/priority-resolver';
 
@@ -33,6 +34,7 @@ export function useSchedule() {
 
   const loadAllData = async () => {
     try {
+      await seedIfEmpty();
       const [j, t, e, ev, c] = await Promise.all([
         journeysRepo.getAll(),
         templatesRepo.getAll(),

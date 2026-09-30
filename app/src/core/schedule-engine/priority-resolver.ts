@@ -80,6 +80,16 @@ export function resolveScheduleForDate(
     }
   }
 
+  const journeySchedule = journeys.find(j => j.journey === journey);
+  if (journeySchedule && journeySchedule.events.length > 0) {
+    return {
+      journey,
+      date,
+      events: journeySchedule.events,
+      source: 'journey'
+    };
+  }
+
   const dayTemplate = templates.find(
     t => t.journey === journey && t.events.some(e => e.activeDays.includes(dayOfWeek))
   );
@@ -94,7 +104,6 @@ export function resolveScheduleForDate(
     };
   }
 
-  const journeySchedule = journeys.find(j => j.journey === journey);
   if (journeySchedule) {
     return {
       journey,
