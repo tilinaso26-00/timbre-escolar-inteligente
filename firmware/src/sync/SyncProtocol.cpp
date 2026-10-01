@@ -1,5 +1,5 @@
 #include "SyncProtocol.h"
-#include "ScheduleStore.h"
+#include "schedule/ScheduleStore.h"
 #include "utils/Logger.h"
 
 bool SyncProtocol::parseAndStore(JsonDocument& doc, ScheduleStore* store) {

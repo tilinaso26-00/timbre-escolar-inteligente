@@ -22,7 +22,7 @@ void WebSocketServerWrapper::init(uint16_t port) {
     server.onEvent([this](uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
         onEvent(num, type, payload, length);
     });
-    logger.info("Servidor WebSocket iniciado en puerto %d", port);
+    logger->info("Servidor WebSocket iniciado en puerto %d", port);
 }
 
 void WebSocketServerWrapper::loop() {
@@ -33,27 +33,27 @@ void WebSocketServerWrapper::onEvent(uint8_t num, WStype_t type, uint8_t* payloa
     switch (type) {
         case WStype_CONNECTED: {
             IPAddress ip = server.remoteIP(num);
-            logger.info("WS Cliente conectado: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+            logger->info("WS Cliente conectado: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
             broadcastHeartbeat();
             break;
         }
         case WStype_DISCONNECTED: {
-            logger.info("WS Cliente desconectado: %d", num);
+            logger->info("WS Cliente desconectado: %d", num);
             break;
         }
         case WStype_TEXT: {
             String msg = String((char*)payload);
-            logger.debug("WS Mensaje recibido: %s", msg.c_str());
+            logger->debug("WS Mensaje recibido: %s", msg.c_str());
 
             StaticJsonDocument<8192> doc;
             DeserializationError error = deserializeJson(doc, msg);
             if (error) {
-                logger.warn("WS JSON inválido: %s", error.c_str());
+                logger->warn("WS JSON inválido: %s", error.c_str());
                 return;
             }
 
             if (!Auth::verifyWSAuth(doc)) {
-                logger.warn("WS Auth fallido");
+                logger->warn("WS Auth fallido");
                 StaticJsonDocument<128> resp;
                 resp["event"] = "error";
                 resp["code"] = "UNAUTHORIZED";
@@ -70,9 +70,11 @@ void WebSocketServerWrapper::onEvent(uint8_t num, WStype_t type, uint8_t* payloa
             if (strcmp(event, "sync:request") == 0) {
                 JsonObject data = doc["data"].as<JsonObject>();
                 if (!data.isNull()) {
-                    logger.info("Sync request recibido vía WebSocket");
-                    stateManager->handleFullSync(data);
-                    String hash = SyncProtocol::calculateHash(data);
+                    logger->info("Sync request recibido vía WebSocket");
+                    JsonDocument syncDoc;
+                    syncDoc.set(data);
+                    stateManager->handleFullSync(syncDoc);
+                    String hash = SyncProtocol::calculateHash(syncDoc);
                     int version = data["version"] | 0;
 
                     StaticJsonDocument<256> resp;
@@ -83,18 +85,53 @@ void WebSocketServerWrapper::onEvent(uint8_t num, WStype_t type, uint8_t* payloa
                     serializeJson(resp, output);
                     sendTo(num, output);
                 } else {
-                    logger.warn("Sync request sin data");
+                    logger->warn("Sync request sin data");
                 }
             } else if (strcmp(event, "bell:manual") == 0) {
                 int duration = doc["data"]["durationSec"] | 3;
+                const char* eventName = doc["data"]["eventName"] | "Timbre manual";
+                bool demo = doc["data"]["demo"] | false;
                 relay->activate(duration * 1000);
+                if (gScheduler) {
+                    gScheduler->notifyBellExecuted(String(eventName), "manual", "matutina",
+                                                   demo ? "demo" : "manual", duration);
+                }
             } else if (strcmp(event, "bell:test") == 0) {
                 int duration = doc["data"]["durationSec"] | 3;
                 relay->activate(duration * 1000);
+                if (gScheduler) {
+                    gScheduler->notifyBellExecuted("Prueba de timbre", "manual", "matutina", "test", duration);
+                }
             } else if (strcmp(event, "config:update") == 0) {
                 // Handle config update
             } else if (strcmp(event, "time:sync") == 0) {
-                timeManager->syncNow();
+                JsonObject data = doc["data"].as<JsonObject>();
+                bool applied = false;
+
+                if (!data.isNull()) {
+                    const char* timestamp = data["timestamp"] | (const char*)nullptr;
+                    if (timestamp && strlen(timestamp) > 0) {
+                        applied = timeManager->setFromApp(String(timestamp));
+                    }
+
+                    if (!applied) {
+                        unsigned long epoch = data["epoch"] | 0UL;
+                        if (epoch > 1000000000000UL) epoch /= 1000; // milisegundos
+                        if (epoch > 0) applied = timeManager->setFromEpoch(epoch);
+                    }
+                }
+
+                logger->info("time:sync %s", applied ? "aplicada" : "rechazada");
+
+                StaticJsonDocument<256> resp;
+                resp["event"] = "time:sync";
+                resp["data"]["applied"] = applied;
+                resp["data"]["deviceTime"] = timeManager->getCurrentTimeString();
+                resp["data"]["date"] = timeManager->getCurrentDateString();
+                resp["data"]["valid"] = timeManager->isTimeValid();
+                String output;
+                serializeJson(resp, output);
+                sendTo(num, output);
             } else if (strcmp(event, "demo:start") == 0) {
                 // Demo mode
             } else if (strcmp(event, "demo:stop") == 0) {
@@ -113,7 +150,8 @@ void WebSocketServerWrapper::onEvent(uint8_t num, WStype_t type, uint8_t* payloa
 }
 
 void WebSocketServerWrapper::broadcast(const String& message) {
-    server.broadcastTXT(message);
+    String payload = message;
+    server.broadcastTXT(payload);
 }
 
 void WebSocketServerWrapper::broadcastHeartbeat() {
@@ -135,5 +173,6 @@ void WebSocketServerWrapper::broadcastHeartbeat() {
 }
 
 void WebSocketServerWrapper::sendTo(uint8_t num, const String& message) {
-    server.sendTXT(num, message);
+    String payload = message;
+    server.sendTXT(num, payload);
 }

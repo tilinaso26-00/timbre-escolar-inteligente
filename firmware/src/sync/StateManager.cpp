@@ -16,7 +16,7 @@ void StateManager::loop() {
 }
 
 void StateManager::onSyncReceived(JsonDocument& doc) {
-    logger.info("Sync recibido, versión: %d", doc["version"] | 0);
+    logger->info("Sync recibido, versión: %d", doc["version"] | 0);
 
     if (SyncProtocol::validateVersion(doc, currentVersion)) {
         // Store will be updated by ScheduleStore::saveFullSync
@@ -28,11 +28,11 @@ void StateManager::onSyncComplete(int version, const String& hash) {
     currentVersion = version;
     currentHash = hash;
     lastSyncTime = millis();
-    logger.info("Sync completado v%d hash=%s", version, hash.c_str());
+    logger->info("Sync completado v%d hash=%s", version, hash.c_str());
 }
 
 void StateManager::handleFullSync(JsonDocument& doc) {
-    logger.info("Procesando sync completo v%d", doc["version"] | 0);
+    logger->info("Procesando sync completo v%d", doc["version"] | 0);
 
     if (scheduleStore && scheduleStore->saveFullSync(doc)) {
         int version = doc["version"] | 0;
@@ -44,17 +44,17 @@ void StateManager::handleFullSync(JsonDocument& doc) {
             applyDeviceConfig(doc["deviceConfig"]);
         }
     } else {
-        logger.error("Error procesando sync completo");
+        logger->error("Error procesando sync completo");
     }
 }
 
 void StateManager::applyDeviceConfig(JsonObject config) {
     if (timeManager && config["timezone"].is<const char*>()) {
         // Timezone would require NTP restart, log for now
-        logger.info("Config timezone: %s", config["timezone"].as<const char*>());
+        logger->info("Config timezone: %s", config["timezone"].as<const char*>());
     }
     if (config["ntpSyncIntervalMinutes"].is<int>()) {
-        logger.info("Config ntpSyncInterval: %d min", config["ntpSyncIntervalMinutes"].as<int>());
+        logger->info("Config ntpSyncInterval: %d min", config["ntpSyncIntervalMinutes"].as<int>());
     }
 }
 

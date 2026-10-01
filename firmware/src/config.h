@@ -21,7 +21,7 @@
 #define WIFI_PASSWORD "colegio2024"
 #define WIFI_FALLBACK_AP true
 #define AP_SSID "TimbreEscolar-Setup"
-#define AP_PASSWORD "config1234"
+#define AP_PASSWORD "Timbre#Escolar2026"
 
 // NTP
 #define NTP_SERVER_1 "pool.ntp.org"

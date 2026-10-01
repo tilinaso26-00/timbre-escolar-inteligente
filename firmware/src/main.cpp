@@ -17,18 +17,19 @@ TimeManager timeManager;
 ScheduleStore scheduleStore;
 Scheduler scheduler;
 WiFiManager wifiManager;
-WebServer webServer;
-WebSocketServer wsServer;
-MDNSResponder mdns;
+WebServerWrapper webServer;
+WebSocketServerWrapper wsServer;
+MdnsService mdns;
 RelayControl relay;
 Watchdog watchdog;
 SyncProtocol syncProtocol;
 StateManager stateManager;
-Logger logger;
 
 unsigned long lastHeartbeat = 0;
 unsigned long lastStatusBroadcast = 0;
 unsigned long lastLoopTime = 0;
+
+void broadcastStatus();
 
 void setup() {
     Serial.begin(115200);
@@ -60,6 +61,9 @@ void setup() {
     webServer.setDependencies(&scheduleStore, &timeManager, &wifiManager, &relay, &logger, &stateManager);
     wsServer.setDependencies(&scheduleStore, &timeManager, &wifiManager, &relay, &logger, &stateManager, &scheduler);
 
+    // Los timbres ejecutados se publican a la aplicación (evento bell:executed)
+    scheduler.setBellNotifier([](const String& payload) { wsServer.broadcast(payload); });
+
     logger.info("Sistema inicializado correctamente");
 }
 
@@ -90,16 +94,16 @@ void loop() {
 
 void broadcastStatus() {
     StaticJsonDocument<512> doc;
-    doc["type"] = "status";
-    doc["connected"] = wifiManager.isConnected();
-    doc["wifi"] = wifiManager.isConnected();
-    doc["lastSync"] = stateManager.getLastSyncTime();
-    doc["deviceTime"] = timeManager.getCurrentTimeString();
-    doc["nextEvent"] = scheduler.getNextEvent();
-    doc["lastBell"] = scheduler.getLastBellTime();
-    doc["lastEvent"] = scheduler.getLastExecutedEvent();
-    doc["scheduledCount"] = scheduleStore.getEventCount();
-    doc["relayState"] = relay.getState();
+    doc["event"] = "status";
+    doc["data"]["connected"] = wifiManager.isConnected();
+    doc["data"]["wifi"] = wifiManager.isConnected();
+    doc["data"]["lastSync"] = stateManager.getLastSyncTime();
+    doc["data"]["deviceTime"] = timeManager.getCurrentTimeString();
+    doc["data"]["nextEvent"] = scheduler.getNextEvent();
+    doc["data"]["lastBell"] = scheduler.getLastBellTime();
+    doc["data"]["lastEvent"] = scheduler.getLastExecutedEvent();
+    doc["data"]["scheduledCount"] = scheduleStore.getEventCount();
+    doc["data"]["relayState"] = relay.getState();
 
     String output;
     serializeJson(doc, output);

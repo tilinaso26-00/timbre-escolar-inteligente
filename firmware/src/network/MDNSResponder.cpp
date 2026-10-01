@@ -1,11 +1,11 @@
 #include "MDNSResponder.h"
 #include "utils/Logger.h"
 
-MDNSResponder::MDNSResponder() {
+MdnsService::MdnsService() {
     strcpy(hostname, "timbre-escolar");
 }
 
-void MDNSResponder::init(const char* name) {
+void MdnsService::init(const char* name) {
     strncpy(hostname, name, sizeof(hostname) - 1);
 
     if (MDNS.begin(hostname)) {
@@ -18,12 +18,10 @@ void MDNSResponder::init(const char* name) {
     }
 }
 
-void MDNSResponder::loop() {
-    if (started) {
-        MDNS.update();
-    }
+void MdnsService::loop() {
+    // ESP32 core 3.x actualiza mDNS en segundo plano
 }
 
-bool MDNSResponder::isRunning() {
+bool MdnsService::isRunning() {
     return started;
 }

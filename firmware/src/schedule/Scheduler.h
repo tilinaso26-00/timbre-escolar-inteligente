@@ -5,6 +5,7 @@
 #include "time/TimeManager.h"
 #include "hardware/RelayControl.h"
 #include "utils/Logger.h"
+#include <functional>
 
 class Scheduler {
 private:
@@ -27,6 +28,7 @@ private:
     int resolvedCount = 0;
     int resolvedCapacity = 0;
     String lastResolvedDate = "";
+    std::function<void(const String&)> bellNotifier;
 
     void rebuildResolvedSchedule();
     void ensureResolvedCapacity(int needed);
@@ -34,6 +36,8 @@ private:
     bool isExceptionActiveToday(const CalendarException* exc, const String& today, int dayOfWeek);
     CalendarException* findMatchingException(const String& today, const String& journey, int dayOfWeek);
     bool isNoClassesException(const CalendarException* exc);
+    bool isEventActiveToday(ScheduleEvent* event, int dayOfWeek);
+    void executeEvent(ScheduleEvent* event);
 
 public:
     Scheduler();
@@ -44,6 +48,11 @@ public:
     String getLastBellTime();
     String getLastExecutedEvent();
     void forceRebuild();
+
+    // Aviso de timbre ejecutado hacia la aplicación (evento bell:executed)
+    void setBellNotifier(std::function<void(const String&)> notifier);
+    void notifyBellExecuted(const String& eventName, const String& eventType, const String& journey,
+                            const char* triggeredBy, int durationSec);
 };
 
 #endif

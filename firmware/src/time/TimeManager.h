@@ -2,6 +2,7 @@
 #define TIME_MANAGER_H
 
 #include <Arduino.h>
+#include <WiFi.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <RTClib.h>
@@ -18,6 +19,11 @@ private:
     char ntpServer1[64];
     char ntpServer2[64];
 
+    // Hora impuesta por la aplicación (punto de acceso aislado, sin NTP)
+    bool externalSet = false;
+    unsigned long externalEpoch = 0;
+    unsigned long externalMillis = 0;
+
 public:
     TimeManager();
     ~TimeManager();
@@ -32,10 +38,15 @@ public:
     unsigned long getLastSyncTime();
     bool hasRTC();
 
+    // Hora enviada por la app: ISO local "YYYY-MM-DDTHH:MM:SS"
+    bool setFromApp(const String& isoTimestamp);
+    bool setFromEpoch(unsigned long epochSeconds);
+
 private:
     void setupRTC();
     void applyTimezone(time_t& utc);
     void updateRTC(time_t utc);
+    bool localNow(time_t& out);
 };
 
 #endif

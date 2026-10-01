@@ -1,4 +1,5 @@
 #include "ScheduleStore.h"
+#include "sync/SyncProtocol.h"
 #include "utils/Logger.h"
 #include "config.h"
 

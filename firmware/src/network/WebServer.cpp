@@ -1,4 +1,5 @@
 #include "WebServer.h"
+#include "config.h"
 #include <ArduinoJson.h>
 #include "sync/SyncProtocol.h"
 #include "sync/Auth.h"
@@ -17,7 +18,7 @@ void WebServerWrapper::setDependencies(ScheduleStore* ss, TimeManager* tm, WiFiM
 void WebServerWrapper::init() {
     setupRoutes();
     server.begin();
-    logger.info("Servidor HTTP iniciado en puerto 80");
+    logger->info("Servidor HTTP iniciado en puerto 80");
 }
 
 void WebServerWrapper::loop() {

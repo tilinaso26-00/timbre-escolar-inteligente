@@ -82,7 +82,7 @@ void Scheduler::rebuildResolvedSchedule() {
     }
 
     if (dateException && dateException->type == "no_classes") {
-        logger.info("Hoy %s: Sin clases (excepción no_classes)", today.c_str());
+        logger->info("Hoy %s: Sin clases (excepción no_classes)", today.c_str());
         resolvedCount = 0;
         return;
     }
@@ -90,7 +90,7 @@ void Scheduler::rebuildResolvedSchedule() {
     ScheduleTemplate* selectedTemplate = nullptr;
 
     if (dateException && dateException->type == "custom") {
-        logger.info("Hoy %s: Horario custom (excepción)", today.c_str());
+        logger->info("Hoy %s: Horario custom (excepción)", today.c_str());
     } else if (dateException && dateException->type == "schedule") {
         for (int i = 0; i < templateCount; i++) {
             if (templates[i].id == dateException->scheduleId) {
@@ -98,7 +98,7 @@ void Scheduler::rebuildResolvedSchedule() {
                 break;
             }
         }
-        logger.info("Hoy %s: Plantilla de excepción %s", today.c_str(), selectedTemplate ? selectedTemplate->name.c_str() : "no encontrada");
+        logger->info("Hoy %s: Plantilla de excepción %s", today.c_str(), selectedTemplate ? selectedTemplate->name.c_str() : "no encontrada");
     } else {
         for (int i = 0; i < templateCount; i++) {
             if (templates[i].journey == "matutina" || templates[i].journey == "vespertina") {
@@ -116,7 +116,7 @@ void Scheduler::rebuildResolvedSchedule() {
             }
         }
         if (selectedTemplate) {
-            logger.info("Hoy %s: Plantilla por día %s", today.c_str(), selectedTemplate->name.c_str());
+            logger->info("Hoy %s: Plantilla por día %s", today.c_str(), selectedTemplate->name.c_str());
         }
     }
 
@@ -210,7 +210,7 @@ void Scheduler::rebuildResolvedSchedule() {
         }
     }
 
-    logger.info("Scheduler rebuilt for %s: %d eventos resueltos (journey: %s)", today.c_str(), resolvedCount, selectedTemplate ? selectedTemplate->journey.c_str() : "base");
+    logger->info("Scheduler rebuilt for %s: %d eventos resueltos (journey: %s)", today.c_str(), resolvedCount, selectedTemplate ? selectedTemplate->journey.c_str() : "base");
 }
 
 bool Scheduler::isEventActiveToday(ScheduleEvent* event, int dayOfWeek) {
@@ -249,10 +249,43 @@ void Scheduler::executeEvent(ScheduleEvent* event) {
     lastBellTime = timeStr;
     lastExecutedEvent = event->name;
 
-    logger.info("EJECUTANDO: %s (%s) - Jornada: %s - Duración: %ds",
+    logger->info("EJECUTANDO: %s (%s) - Jornada: %s - Duración: %ds",
                 event->name.c_str(), event->type.c_str(), event->journey.c_str(), event->bellDurationSec);
 
     relay->activate(event->bellDurationSec * 1000);
+
+    notifyBellExecuted(event->name, event->type, event->journey, "automatic", event->bellDurationSec);
+}
+
+void Scheduler::setBellNotifier(std::function<void(const String&)> notifier) {
+    bellNotifier = notifier;
+}
+
+void Scheduler::notifyBellExecuted(const String& eventName, const String& eventType, const String& journey,
+                                   const char* triggeredBy, int durationSec) {
+    if (!bellNotifier) return;
+
+    StaticJsonDocument<640> doc;
+    doc["event"] = "bell:executed";
+    doc["data"]["eventName"] = eventName;
+    doc["data"]["eventType"] = eventType;
+    doc["data"]["journey"] = journey;
+    doc["data"]["triggeredBy"] = triggeredBy ? triggeredBy : "automatic";
+    doc["data"]["executed"] = true;
+    doc["data"]["durationSeconds"] = durationSec;
+
+    if (timeManager) {
+        String timestamp = timeManager->getCurrentDateString() + "T" + timeManager->getCurrentTimeString();
+        doc["data"]["timestamp"] = timestamp;
+        doc["data"]["actualBellTime"] = timeManager->getCurrentTimeString();
+    }
+
+    doc["data"]["deviceId"] = DEVICE_NAME;
+    doc["data"]["firmwareVersion"] = FIRMWARE_VERSION;
+
+    String output;
+    serializeJson(doc, output);
+    bellNotifier(output);
 }
 
 String Scheduler::getNextEvent() {

@@ -65,6 +65,7 @@ bool TimeManager::syncNow() {
         applyTimezone(utc);
         updateRTC(utc);
         lastSync = millis();
+        externalSet = false; // NTP toma el control de la hora
         logger.info("Hora sincronizada via NTP: %s", getCurrentTimeString().c_str());
         success = true;
     } else {
@@ -86,14 +87,7 @@ void TimeManager::updateRTC(time_t utc) {
 
 String TimeManager::getCurrentTimeString() {
     time_t now;
-    if (ntpClient && ntpClient->isTimeSet()) {
-        now = ntpClient->getEpochTime();
-        applyTimezone(now);
-    } else if (rtcAvailable) {
-        now = rtc.now().unixtime();
-    } else {
-        return "--:--:--";
-    }
+    if (!localNow(now)) return "--:--:--";
 
     struct tm* timeinfo = localtime(&now);
     char buffer[32];
@@ -103,14 +97,7 @@ String TimeManager::getCurrentTimeString() {
 
 String TimeManager::getCurrentDateString() {
     time_t now;
-    if (ntpClient && ntpClient->isTimeSet()) {
-        now = ntpClient->getEpochTime();
-        applyTimezone(now);
-    } else if (rtcAvailable) {
-        now = rtc.now().unixtime();
-    } else {
-        return "----/--/--";
-    }
+    if (!localNow(now)) return "----/--/--";
 
     struct tm* timeinfo = localtime(&now);
     char buffer[32];
@@ -120,12 +107,7 @@ String TimeManager::getCurrentDateString() {
 
 struct tm TimeManager::getCurrentTimeStruct() {
     time_t now;
-    if (ntpClient && ntpClient->isTimeSet()) {
-        now = ntpClient->getEpochTime();
-        applyTimezone(now);
-    } else if (rtcAvailable) {
-        now = rtc.now().unixtime();
-    } else {
+    if (!localNow(now)) {
         struct tm empty = {0};
         return empty;
     }
@@ -133,7 +115,73 @@ struct tm TimeManager::getCurrentTimeStruct() {
 }
 
 bool TimeManager::isTimeValid() {
+    if (externalSet) return true;
     return (ntpClient && ntpClient->isTimeSet()) || (rtcAvailable && rtc.now().isValid());
+}
+
+bool TimeManager::localNow(time_t& out) {
+    if (externalSet) {
+        unsigned long elapsed = (millis() - externalMillis) / 1000UL;
+        out = (time_t)((unsigned long)externalEpoch + elapsed);
+        return true;
+    }
+    if (ntpClient && ntpClient->isTimeSet()) {
+        time_t now = ntpClient->getEpochTime();
+        applyTimezone(now);
+        out = now;
+        return true;
+    }
+    if (rtcAvailable && rtc.now().isValid()) {
+        out = rtc.now().unixtime();
+        return true;
+    }
+    return false;
+}
+
+bool TimeManager::setFromEpoch(unsigned long epochSeconds) {
+    if (epochSeconds == 0) return false;
+
+    externalEpoch = epochSeconds;
+    externalMillis = millis();
+    externalSet = true;
+    lastSync = millis();
+
+    time_t local = (time_t)epochSeconds;
+    updateRTC(local);
+    logger.info("Hora recibida de la aplicación: %s", getCurrentTimeString().c_str());
+    return true;
+}
+
+bool TimeManager::setFromApp(const String& isoTimestamp) {
+    String value = isoTimestamp;
+    value.trim();
+    if (value.isEmpty()) return false;
+
+    value.replace(" ", "T");
+    int dot = value.indexOf('.');
+    if (dot >= 0) value = value.substring(0, dot);
+    if (value.endsWith("Z")) value = value.substring(0, value.length() - 1);
+
+    struct tm parsed;
+    memset(&parsed, 0, sizeof(parsed));
+    if (strptime(value.c_str(), "%Y-%m-%dT%H:%M:%S", &parsed) == NULL) {
+        logger.warn("time:sync con formato inválido: %s", isoTimestamp.c_str());
+        return false;
+    }
+    parsed.tm_isdst = -1;
+    time_t local = mktime(&parsed);
+    if (local == (time_t)-1 || local == 0) {
+        logger.warn("time:sync no interpretable: %s", isoTimestamp.c_str());
+        return false;
+    }
+
+    externalEpoch = (unsigned long)local;
+    externalMillis = millis();
+    externalSet = true;
+    lastSync = millis();
+    updateRTC(local);
+    logger.info("Hora recibida de la aplicación: %s", getCurrentTimeString().c_str());
+    return true;
 }
 
 unsigned long TimeManager::getLastSyncTime() {

@@ -17,6 +17,8 @@ private:
     int currentVersion = 0;
     String currentHash = "";
 
+    void applyDeviceConfig(JsonObject config);
+
 public:
     StateManager();
     void init(ScheduleStore* ss, TimeManager* tm, WiFiManager* wm, Logger* log);

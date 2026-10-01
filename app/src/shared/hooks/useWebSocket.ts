@@ -185,6 +185,7 @@ function createBridge(): Bridge {
   let url = resolveWsUrl();
   let attempts = 0;
   let retryTimer: number | null = null;
+  let timeSyncTimer: number | null = null;
   let notifier: NotifyFn | null = null;
   const listeners = new Set<Listener>();
   const state: BridgeState = { connected: false, deviceStatus: null };
@@ -213,6 +214,40 @@ function createBridge(): Bridge {
       retryTimer = null;
       open();
     }, delay);
+  };
+
+  // Hora local "YYYY-MM-DDTHH:MM:SS" (el ESP32 la interpreta como hora del colegio)
+  const localTimestamp = (): string => {
+    const now = new Date();
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return (
+      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
+      `T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+    );
+  };
+
+  const sendTimeSync = (): void => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(
+      JSON.stringify({
+        event: 'time:sync',
+        data: { timestamp: localTimestamp() },
+        token: resolveWsToken(),
+      }),
+    );
+  };
+
+  const stopTimeSync = (): void => {
+    if (timeSyncTimer !== null) {
+      window.clearInterval(timeSyncTimer);
+      timeSyncTimer = null;
+    }
+  };
+
+  const startTimeSync = (): void => {
+    stopTimeSync();
+    sendTimeSync();
+    timeSyncTimer = window.setInterval(sendTimeSync, 5 * 60 * 1000);
   };
 
   const handleMessage = (event: MessageEvent): void => {
@@ -287,6 +322,7 @@ function createBridge(): Bridge {
       state.connected = true;
       emit();
       notify({ type: 'success', title: 'Dispositivo conectado' });
+      startTimeSync();
     };
 
     ws.onmessage = handleMessage;
@@ -296,6 +332,7 @@ function createBridge(): Bridge {
       ws = null;
       state.connected = false;
       emit();
+      stopTimeSync();
       if (wasConnected) {
         notify({ type: 'warning', title: 'Dispositivo desconectado' });
       }

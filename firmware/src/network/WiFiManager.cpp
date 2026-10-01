@@ -1,11 +1,12 @@
 #include "WiFiManager.h"
+#include "config.h"
 #include "utils/Logger.h"
 
 WiFiManager::WiFiManager() : fallbackAP(false) {
     strcpy(ssid, "");
     strcpy(password, "");
-    strcpy(apSSID, "TimbreEscolar-Setup");
-    strcpy(apPassword, "config1234");
+    strcpy(apSSID, AP_SSID);
+    strcpy(apPassword, AP_PASSWORD);
 }
 
 void WiFiManager::init(const char* s, const char* pass, bool fallback, const char* apSsid, const char* apPass) {

@@ -2,6 +2,8 @@
 #define AUTH_H
 
 #include <Arduino.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
 
 class Auth {
 public:

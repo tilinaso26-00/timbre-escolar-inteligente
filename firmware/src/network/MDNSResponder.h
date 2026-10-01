@@ -4,13 +4,13 @@
 #include <Arduino.h>
 #include <ESPmDNS.h>
 
-class MDNSResponder {
+class MdnsService {
 private:
     char hostname[32];
     bool started = false;
 
 public:
-    MDNSResponder();
+    MdnsService();
     void init(const char* name);
     void loop();
     bool isRunning();
