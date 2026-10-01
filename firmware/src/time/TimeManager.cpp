@@ -20,10 +20,46 @@ void TimeManager::init(const char* server1, const char* server2, unsigned long i
     ntpClient->begin();
 
     setupRTC();
+    restoreTimeFromNvs();
 
     if (WiFi.isConnected()) {
         syncNow();
     }
+}
+
+void TimeManager::restoreTimeFromNvs() {
+    Preferences stored;
+    if (!stored.begin("timbre-time", true)) {
+        logger.warn("No se pudo leer NVS");
+        return;
+    }
+    bool valid = stored.getBool("valid", false);
+    uint32_t epoch = stored.getULong("epoch", 0);
+    stored.end();
+
+    if (!valid || epoch < 1600000000UL) {
+        logger.info("NVS sin hora guardada, esperando NTP o la aplicación");
+        return;
+    }
+
+    externalEpoch = epoch;
+    externalMillis = millis();
+    externalSet = true;
+    lastSync = millis();
+    logger.info("Hora restaurada desde NVS: %s", getCurrentTimeString().c_str());
+}
+
+void TimeManager::persistTime(time_t localEpoch) {
+    if (localEpoch <= 0) return;
+
+    Preferences stored;
+    if (!stored.begin("timbre-time", false)) {
+        logger.warn("No se pudo guardar la hora en NVS");
+        return;
+    }
+    stored.putULong("epoch", (uint32_t)localEpoch);
+    stored.putBool("valid", true);
+    stored.end();
 }
 
 void TimeManager::setupRTC() {
@@ -66,6 +102,7 @@ bool TimeManager::syncNow() {
         updateRTC(utc);
         lastSync = millis();
         externalSet = false; // NTP toma el control de la hora
+        persistTime(utc);
         logger.info("Hora sincronizada via NTP: %s", getCurrentTimeString().c_str());
         success = true;
     } else {
@@ -148,6 +185,7 @@ bool TimeManager::setFromEpoch(unsigned long epochSeconds) {
 
     time_t local = (time_t)epochSeconds;
     updateRTC(local);
+    persistTime(local);
     logger.info("Hora recibida de la aplicación: %s", getCurrentTimeString().c_str());
     return true;
 }
@@ -180,6 +218,7 @@ bool TimeManager::setFromApp(const String& isoTimestamp) {
     externalSet = true;
     lastSync = millis();
     updateRTC(local);
+    persistTime(local);
     logger.info("Hora recibida de la aplicación: %s", getCurrentTimeString().c_str());
     return true;
 }

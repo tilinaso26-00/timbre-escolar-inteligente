@@ -6,6 +6,7 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <RTClib.h>
+#include <Preferences.h>
 
 class TimeManager {
 private:
@@ -47,6 +48,8 @@ private:
     void applyTimezone(time_t& utc);
     void updateRTC(time_t utc);
     bool localNow(time_t& out);
+    void restoreTimeFromNvs();
+    void persistTime(time_t localEpoch);
 };
 
 #endif

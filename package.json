@@ -1,0 +1,8 @@
+{
+  "name": "timbre-escolar-inteligente",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "mock": "node scripts/mock-esp32.mjs"
+  }
+}
