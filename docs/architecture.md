@@ -3,10 +3,11 @@
 ## 1. Visión General
 
 Sistema completo de automatización de timbres escolares compuesto por:
-- **Aplicación Web (Admin)**: React + TypeScript + Vite + Tailwind CSS + PWA
+- **Aplicación de escritorio (Admin)**: Tauri 2 (Rust) + React + TypeScript + Vite + Tailwind CSS + PWA
 - **Controlador Físico (ESP32)**: Firmware C++ con PlatformIO
 - **Comunicación**: WebSocket (tiempo real) + REST API (configuración)
-- **Almacenamiento**: IndexedDB (App) + LittleFS (ESP32)
+- **Almacenamiento**: IndexedDB (App, podada a 180 días / 5000 eventos) + LittleFS (ESP32)
+- **24/7**: la app arranca con Windows, se minimiza a la bandeja y nunca duerme la PC
 
 ---
 
@@ -14,7 +15,7 @@ Sistema completo de automatización de timbres escolares compuesto por:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        APLICACIÓN WEB (ADMIN)                       │
+│              APLICACIÓN DE ESCRITORIO (TAURI + REACT)               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌───────────┐ │
 │  │  Dashboard  │  │  Horarios   │  │ Calendario  │  │ Plantillas│ │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └───────────┘ │
@@ -39,7 +40,7 @@ Sistema completo de automatización de timbres escolares compuesto por:
 │                     CONTROLADOR ESP32                                │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌───────────┐ │
 │  │  Scheduler  │  │  Schedule   │  │  TimeMgr    │  │  WiFi     │ │
-│  │  (Minuto)   │◄─┤  Store      │  │  (NTP+RTC)  │  │  Manager  │ │
+│  │  (Minuto)   │◄─┤  Store      │  │  (NTP+NVS)   │  │  Manager  │ │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └───────────┘ │
 │        │                │                │                │        │
 │        ▼                ▼                ▼                ▼        │
@@ -59,12 +60,13 @@ Sistema completo de automatización de timbres escolares compuesto por:
 
 ## 3. Módulos Principales
 
-### 3.1 Aplicación Web (App)
+### 3.1 Aplicación de escritorio (App)
 
 | Módulo | Tecnología | Responsabilidad |
 |--------|------------|-----------------|
+| **Shell (Tauri)** | Rust (tauri 2) | Ventana única, cerrar = ocultar, bandeja (tray) con Salir, arranque con Windows, guardado de tamaño/posición, logs en disco |
 | **Core/Schedule-Engine** | TypeScript (puro) | Lógica de horarios, cálculo de períodos, validación, prioridades |
-| **Core/Storage** | IndexedDB (Dexie) | Persistencia local: jornadas, plantillas, excepciones, eventos, config |
+| **Core/Storage** | IndexedDB (Dexie) | Persistencia local: jornadas, plantillas, excepciones, eventos, config (con poda automática de historial) |
 | **Features/Dashboard** | React + Tailwind | Vista principal: estado, próximo timbre, cuenta regresiva, timbre manual |
 | **Features/Schedules** | React + @hello-pangea/dnd | Editor visual drag-drop, ajustes ±5/10/15min, vista previa |
 | **Features/Calendar** | React + react-day-picker | Vista mensual, excepciones por fecha, prioridades |
@@ -77,7 +79,7 @@ Sistema completo de automatización de timbres escolares compuesto por:
 
 | Módulo | Archivos | Responsabilidad |
 |--------|----------|-----------------|
-| **TimeManager** | `time/TimeManager.h/cpp` | NTP + DS3231 RTC, zona horaria Guatemala (UTC-6) |
+| **TimeManager** | `time/TimeManager.h/cpp` | NTP + hora persistida en NVS (sobrevive apagones), zona horaria Guatemala (UTC-6). Soporte opcional DS3231 si se conecta |
 | **ScheduleStore** | `schedule/ScheduleStore.h/cpp` | LittleFS: horarios, plantillas, excepciones en memoria |
 | **Scheduler** | `schedule/Scheduler.h/cpp` | Ejecución minuto a minuto, evalúa excepciones con prioridades |
 | **WiFiManager** | `network/WiFiManager.h/cpp` | STA + AP fallback, reconexión automática |
@@ -185,10 +187,8 @@ BellEventLog {
 { "event": "sync:request", "data": { ...SyncPayload }, "token": "timbre-escolar-2024" }
 { "event": "bell:manual", "data": { "durationSec": 3 }, "token": "..." }
 { "event": "bell:test", "data": { "durationSec": 3 }, "token": "..." }
+{ "event": "config:update", "data": { ... }, "token": "..." }
 { "event": "time:sync", "token": "..." }
-{ "event": "demo:start", "data": { "speed": 60 }, "token": "..." }
-{ "event": "demo:stop", "token": "..." }
-{ "event": "demo:trigger", "data": { "eventName": "Entrada" }, "token": "..." }
 ```
 
 **ESP32 → App:**
@@ -196,9 +196,13 @@ BellEventLog {
 { "event": "status", "data": { "connected": true, "wifi": true, "lastSync": 1234567890, "deviceTime": "12:34:56", "nextEvent": "Recreo a 09:30 (en 18 min)", "lastBell": "09:15", "scheduledCount": 12, "relayState": false } }
 { "event": "sync:complete", "data": { "version": 1234567890, "hash": "A1B2C3D4" } }
 { "event": "sync:error", "data": "Error message" }
+{ "event": "time:sync", "data": { ... } }
 { "event": "bell:executed", "data": { "eventName": "Recreo", "timestamp": "09:30:00" } }
 { "event": "error", "code": "SYNC_FAILED", "message": "..." }
 ```
+
+> Los eventos `demo:start` / `demo:stop` / `demo:trigger` son **internos de la app y del
+> simulador** (`npm run mock`); el firmware real no los conoce.
 
 ### 5.2 REST API (Puerto 80)
 
@@ -219,7 +223,7 @@ BellEventLog {
 
 ---
 
-## 5. Sync Payload (App → ESP32)
+## 6. Sync Payload (App → ESP32)
 
 ```typescript
 interface SyncPayload {
@@ -243,9 +247,9 @@ interface SyncPayload {
 
 ---
 
-## 6. Seguridad Eléctrica
+## 7. Seguridad Eléctrica
 
-### 6.1 Esquema de Conexión Relé
+### 7.1 Esquema de Conexión Relé
 
 ```
 ESP32 (3.3V)          MÓDULO RELÉ (5V)           TIMBRE (120/220V)
@@ -268,31 +272,42 @@ ESP32 (3.3V)          MÓDULO RELÉ (5V)           TIMBRE (120/220V)
 
 ---
 
-## 7. Despliegue
+## 8. Despliegue
 
-### 7.1 Aplicación Web
+### 8.1 Aplicación de escritorio (usuario final)
+```bash
+# Doble click en el instalador generado:
+#   app/src-tauri/target/release/bundle/msi/Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi
+# o bundle/nsis/..._x64-setup.exe
+# Sin comandos: instala acceso en Menú Inicio + arranque con Windows + logs.
+```
+
+### 8.2 Aplicación (desarrollo)
 ```bash
 cd app
 npm install
-npm run build          # Genera dist/ (PWA)
-# Servir dist/ con nginx/Apache o `npm run preview`
+npm run dev          # web en http://localhost:3000
+npm run tauri:dev    # ventana de escritorio
+npm run tauri:build  # genera MSI + NSIS
 ```
 
-### 7.2 Firmware ESP32
+### 8.3 Firmware ESP32
 ```bash
 cd firmware
 # Editar config.h con credenciales WiFi
-pio run --target upload      # Subir firmware
-pio run --target uploadfs    # Subir LittleFS (vacío inicial)
+pio run --target upload                   # subir por USB (por defecto)
+pio run -e esp32dev-ota --target upload   # subir por WiFi (OTA)
 ```
+> No existe `uploadfs`: LittleFS se monta/formatea en runtime (`LittleFS.begin(true)`).
 
-### 7.3 Acceso
-- Web: `http://<IP_ESP32>` o `http://timbre-escolar.local` (mDNS)
-- Login: `admin@colegio.edu` / `admin123`
+### 8.4 Acceso
+- App: icono en Menú Inicio o bandeja del sistema (no es una web servida)
+- Dispositivo: WebSocket `ws://<IP_ESP32>:81` y REST `http://<IP_ESP32>/api/*`
+- Login de la app: `admin@colegio.edu` / `admin123`
 
 ---
 
-## 8. Escalabilidad Futura
+## 9. Escalabilidad Futura
 
 - **Multi-dispositivo**: Agregar `deviceId` en payloads, discovery mDNS
 - **Backend central**: PostgreSQL + WebSocket server para multi-colegio

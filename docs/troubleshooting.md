@@ -22,7 +22,7 @@
 | IP cambiada | Ping a IP anterior | Usar mDNS `timbre-escolar.local` / Verificar DHCP lease |
 | Firewall bloquea WS | `telnet <IP> 81` falla | Abrir puerto 81 (WebSocket) + 80 (REST) |
 | ESP32 reiniciando | LED_OK parpadea cada 30s | Ver §3 (Watchdog / Alimentación) |
-| LittleFS corrupto | Logs: "Mount failed" | `pio run -t erase_flash` + `pio run -t uploadfs` |
+| LittleFS corrupto | Logs: "Mount failed" | `pio run -t erase_flash` + re-subir firmware (LittleFS se formatea solo al arrancar) |
 
 ### 2.2 "Error de sincronización"
 | Error | Causa | Solución |
@@ -30,7 +30,7 @@
 | "Token inválido" | Token mismatch | Verificar `AUTH_TOKEN` en config.h y App |
 | "Versión antigua" | Version <= actual | Forzar sync: `localStorage.clear()` + recargar |
 | "JSON inválido" | Payload corrupto | Revisar `SyncPayload` en DevTools Network |
-| "LittleFS full" | Espacio agotado | `pio run -t erase_flash` + `uploadfs` |
+| "LittleFS full" | Espacio agotado | `POST /api/factory-reset` (borra LittleFS) o `pio run -t erase_flash` + re-subir firmware |
 | Timeout WS | `connect_error` | Aumentar `WS_HEARTBEAT_INTERVAL` / Verificar latencia |
 
 ### 2.3 Modo AP no levanta
@@ -79,10 +79,10 @@
 ### 4.2 Timbre suena a destiempo
 | Causa | Solución |
 |-------|----------|
-| Zona horaria incorrecta | `TIMEZONE_OFFSET -6` (Guatemala) / Config Web → Zona horaria |
-| NTP no sincronizado | Verificar `pool.ntp.org` accesible / `time.google.com` / DS3231 OK |
-| DS3231 sin batería | Cambiar CR2032 / Verificar 3V en pines BAT |
-| Reloj derivado | Logs: "NTP sync" cada hora / Forzar `time:sync` via WS |
+| Zona horaria incorrecta | `TIMEZONE_OFFSET -6` (Guatemala) en config.h / Ajustes → Zona horaria |
+| NTP no sincronizado | Verificar `pool.ntp.org` accesible / `time.google.com` |
+| Hora no guardada | La hora vive en NVS: verificarla en Ajustes; re-sincronizar desde la app (`time:sync`) |
+| Reloj derivado | Logs: "NTP sync" cada hora / Forzar `time:sync` desde la app |
 
 ### 4.3 Timbre manual no funciona
 | Verificación | Acción |
@@ -155,30 +155,45 @@
 | `platformio.ini` not found | `cd firmware` antes de `pio` |
 | `esp32dev` not found | `pio platform install espressif32` |
 | `AsyncTCP` / `ESPAsyncWebServer` missing | `pio lib install "me-no-dev/ESPAsyncWebServer@^3.4.1"` |
-| `LittleFS` upload failed | `pio run -t erase_flash` → `pio run -t uploadfs` |
+| Subida falla (puerto COM) | Cerrar monitor serie / Reintentar con cable USB bueno / Botón EN del ESP32 |
 | `CORE_DEBUG_LEVEL` warning | Normal (nivel 3 = info) |
 | Partition table error | `board_build.partitions = default_4MB.csv` en platformio.ini |
 
 ### 7.2 OTA no funciona
 | Verificación | Acción |
 |--------------|--------|
-| `upload_protocol = espota` en platformio.ini | IP correcta en `upload_port` |
+| Comando correcto | `pio run -e esp32dev-ota -t upload` (el env por defecto sube por **USB serial**) |
+| `upload_port` con la IP del ESP32 | IP correcta en platformio.ini |
 | ESP32 en misma red | Ping a IP |
 | Puerto 3232 UDP abierto | Firewall permitir |
-| `ARDUINO_OTA_ENABLED=1` | `pio run -e esp32dev-ota -t upload` |
 
 ---
 
-## 8. Logs y Depuración
+## 8. Problemas de la App de Escritorio (Tauri)
 
-### 8.1 Monitor Serie (115200 baud)
+| Síntoma | Causa probable | Solución |
+|---------|----------------|----------|
+| Doble click no abre nada | Falta runtime / instalación incompleta | Re-ejecutar el `.msi` (no requiere comandos) |
+| No aparece la ventana | Se minimizó a la bandeja | Clic en el icono junto al reloj (o "Mostrar iconos ocultos" ▲) → clic izquierdo en la app |
+| Cerré la ventana y "no apagó" | **Es correcto**: el botón X solo oculta | Para salir: clic derecho en el icono de bandeja → **Salir** |
+| No arranca con Windows | Autostart desactivado | Configuración de Windows → Aplicaciones de inicio → activar "Timbre Escolar Inteligente" |
+| "Desconectado" en el encabezado | No hay ESP32 ni mock | Correr `npm run mock` (desarrollo) o poner la IP del ESP32 en Ajustes → WebSocket |
+| La PC duerme y no suena el timbre | Plan de energía suspende | `powercfg /change standby-timeout-ac 0` (ya aplicado en este equipo) |
+| Ver logs | - | `%LOCALAPPDATA%\com.timbre-escolar.inteligente\logs\logs.log` (hora en UTC) |
+| Muy lenta / historial gigante | IndexedDB sin poda | La poda (180 días / 5000 eventos) corre sola cada 6 h y al abrir |
+
+---
+
+## 9. Logs y Depuración
+
+### 9.1 Monitor Serie (115200 baud)
 ```bash
 pio device monitor
 # Filtrar:
 pio device monitor --filter log_level=debug
 ```
 
-### 8.2 Logs Importantes
+### 9.2 Logs Importantes
 | Tag | Significado |
 |-----|-------------|
 | `[INFO]` | Operación normal (sync, bell, wifi) |
@@ -186,19 +201,23 @@ pio device monitor --filter log_level=debug
 | `[ERROR]` | Crítico (fallo HW, sync failed, crash) |
 | `[DEBUG]` | Verbose (loop timing, I2C, WS frames) |
 
-### 8.2 Logs Web (DevTools)
-- **Console**: Errores JS, WS messages
-- **Network → WS**: Frames `sync:request`, `status`, `bell:executed`
+### 9.3 Logs de la App
+- Instalada: `%LOCALAPPDATA%\com.timbre-escolar.inteligente\logs\logs.log`
+- Desarrollo: pestaña Console del navegador (errores JS, frames WS)
+- **Network → WS**: frames `sync:request`, `status`, `bell:executed`
 - **Application → IndexedDB**: `TimbreEscolarDB` → journeys, templates, exceptions, events
-- **Application → LocalStorage**: `auth-storage`, preferencias
+- **Application → LocalStorage**: `auth-storage`, `timbre.wsUrl`, preferencias
 
 ---
 
-## 9. FAQ (Preguntas Frecuentes)
+## 10. FAQ (Preguntas Frecuentes)
 
 ### General
 **P: ¿Funciona sin Internet?**
-R: Sí. Horarios guardados en LittleFS (ESP32) e IndexedDB (App). NTP/RTC para hora. Solo sincronización y acceso remoto requieren red.
+R: Sí. Horarios guardados en LittleFS (ESP32) e IndexedDB (App). La hora sale de NTP; si no hay red, se restaura desde la NVS del ESP32. Solo la sincronización y el NTP requieren red.
+
+**P: ¿Funciona si se va la luz?**
+R: Sí. El ESP32 guarda la hora en NVS y los horarios en LittleFS; al volver, sigue donde estaba. La PC debe quedar configurada para no dormir (ya aplicado).
 
 **P: ¿Cuántos horarios/plantillas soporta?**
 R: Limitado por LittleFS (~1MB) e IndexedDB (~50MB). Prácticamente: 100s de eventos, 50 plantillas, 365 excepciones/año.
@@ -208,10 +227,10 @@ R: Un ESP32 por timbre físico. App puede gestionar múltiples dispositivos (fut
 
 ### Hardware
 **P: ¿Qué relé comprar?**
-R: Módulo 1 canal 5V 10A con optoacoplador, active-low (ej. KY-019, SRD-05VDC-SL-C). NO conectar 220V directo a ESP32.
+R: Módulo 1 canal 5V 10A con optoacoplador, active-low (ej. KY-019, SRD-05VDC-SL-C). NO conectar 110V directo a ESP32.
 
-**P: ¿DS3231 obligatorio?**
-R: No, pero recomendado. Sin RTC, si falla WiFi+NTP, hora deriva. Con RTC: autonomía años (batería CR2032).
+**P: ¿Es obligatorio el DS3231?**
+R: No. Este montaje **no lo lleva**: la hora se guarda en la NVS del ESP32 y se refresca con NTP o desde la app. El firmware igual detecta un DS3231 si se conectara después (pines 21/22 libres).
 
 **P: ¿Caja IP65 obligatoria?**
 R: Recomendada para exterior/humedad. Interior seco: caja IP20 suficiente.
@@ -231,7 +250,7 @@ R: Solo Español. i18n preparado: Config → General → Idioma (preparado para 
 
 ---
 
-## 10. Contacto y Recursos
+## 11. Contacto y Recursos
 
 | Recurso | Ubicación |
 |---------|-----------|
@@ -240,18 +259,17 @@ R: Solo Español. i18n preparado: Config → General → Idioma (preparado para 
 | Cableado | `hardware/wiring/README.md` |
 | Caja/3D | `hardware/enclosure/README.md` |
 | Instalación | `docs/installation-guide.md` |
-| Código fuente | GitHub repo |
-| Issues/Bugs | GitHub Issues |
-| Licencia | MIT (ver LICENSE) |
+| Comandos (desarrollo) | `COMANDOS_TIMBRE_ESCOLAR.txt` |
+| Licencia | MIT |
 
 ---
 
-## 11. Changelog Resumido
+## 12. Changelog Resumido
 
 | Versión | Fecha | Cambios Principales |
 |---------|-------|---------------------|
-| v1.0.0 | 2024-09 | Release inicial: Dashboard, Editor Horarios, Calendario, Plantillas, Historial, Dispositivo, Config, Demo Mode, Sync WS/REST, Auth, PWA, Firmware ESP32 completo |
+| v1.0.0 | 2026-09 | App de escritorio Tauri (bandeja, arranque con Windows, ventana única, logs, poda de historial), Dashboard, Editor Horarios, Calendario, Plantillas, Historial, Dispositivo, Config, Demo Mode, Sync WS/REST, Auth, PWA, mock ESP32 (`npm run mock`), firmware con hora en NVS, subida serial por defecto + OTA opcional |
 
 ---
 
-*Última actualización: 2024-09-20 | Versión documento: 1.0*
+*Última actualización: 2026-09-30 | Versión documento: 1.1*

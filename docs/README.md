@@ -22,22 +22,28 @@
 
 ## Inicio Rápido
 
+### Usuario final (sin comandos)
+1. Doble click en `app/src-tauri/target/release/bundle/msi/Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi`
+2. Aceptar UAC → abrir **Timbre Escolar Inteligente** desde el Menú Inicio
+3. Login: `admin@colegio.edu` / `admin123`
+
+### Desarrollo
 ```bash
-# 1. App Web
+# 1. Dependencias
 cd app
 npm install
-npm run dev          # Desarrollo: http://localhost:3000
-npm run build        # Producción: genera dist/
 
-# 2. Firmware ESP32
+# 2. App (2 terminales)
+npm run dev          # web: http://localhost:3000
+# ...en la raíz:
+npm run mock         # simulador ESP32: ws://localhost:81
+
+# También: npm run tauri:dev (ventana escritorio) / npm run tauri:build (MSI + NSIS)
+
+# 3. Firmware ESP32 (editar config.h con el WiFi real)
 cd firmware
-# Editar config.h con WiFi
-pio run --target upload
-pio run --target uploadfs
-
-# 3. Acceso
-# http://<IP_ESP32> o http://timbre-escolar.local
-# admin@colegio.edu / admin123
+pio run --target upload          # subida serial (por defecto)
+pio run -e esp32dev-ota -t upload  # subida OTA
 ```
 
 ---
@@ -46,22 +52,24 @@ pio run --target uploadfs
 
 ```
 timbre-escolar-inteligente/
-├── app/                    # Aplicación Web (React + TS + Vite)
+├── app/                    # Aplicación (React + TS + Vite + Tauri)
 │   ├── src/
 │   │   ├── core/           # Lógica pura (schedule-engine, storage)
 │   │   ├── features/       # Módulos por funcionalidad
 │   │   ├── shared/         # Componentes/UI/Hooks compartidos
 │   │   └── styles/         # Tailwind + globals
+│   ├── src-tauri/          # Shell de escritorio (Rust): bandeja, autostart, logs
 │   └── package.json
 ├── firmware/               # Firmware ESP32 (PlatformIO)
 │   ├── src/
-│   │   ├── time/           # NTP + DS3231 RTC
+│   │   ├── time/           # NTP + hora en NVS
 │   │   ├── schedule/       # Store + Scheduler
 │   │   ├── network/        # WiFi + WebServer + WebSocket
 │   │   ├── hardware/       # Relay + Watchdog
 │   │   ├── sync/           # Protocol + State + Auth
 │   │   └── main.cpp
 │   └── platformio.ini
+├── scripts/                # mock-esp32.mjs (simulador), dev-setup.bat
 ├── hardware/               # Documentación hardware
 │   ├── schematic/          # Esquemático + BOM
 │   ├── wiring/             # Cableado + bornes
@@ -80,20 +88,23 @@ timbre-escolar-inteligente/
 | Capa | Tecnología |
 |------|------------|
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS, PWA |
+| Escritorio | Tauri 2 (Rust): bandeja, arranque con Windows, ventana única, logs |
 | Estado | Zustand, React Hook Form, Zod |
-| UI | Lucide React, react-hot-toast, @hello-pangea/dnd, react-day-picker |
-| DB Local | IndexedDB (Dexie.js) |
+| UI | Lucide React, @hello-pangea/dnd, react-day-picker |
+| DB Local | IndexedDB (Dexie.js), poda 180 días / 5000 eventos |
 | Backend/Firmware | ESP32 (Arduino), PlatformIO |
 | RTOS | FreeRTOS (Arduino ESP32) |
 | Comunicación | WebSocket (tiempo real) + REST API |
 | Almacenamiento ESP32 | LittleFS |
-| Tiempo | NTP + DS3231 RTC (I2C) |
+| Tiempo | NTP + hora persistida en NVS (sin RTC externo) |
+| Simulación | `npm run mock` (ESP32 falso en ws://localhost:81) |
 | Seguridad | Token Bearer simple |
 
 ---
 
 ## Funcionalidades Principales
 
+- ✅ App de escritorio: doble click, bandeja, arranca con Windows, nunca duerme la PC
 - ✅ Dashboard tiempo real (estado, próximo timbre, cuenta regresiva)
 - ✅ Editor horarios drag-drop (Matutina/Vespertina independientes)
 - ✅ Períodos dinámicos (±5/10/15min + personalizado, respeta fijos)
@@ -111,10 +122,11 @@ timbre-escolar-inteligente/
 
 ## Licencia
 
-MIT License - Ver [LICENSE](../LICENSE)
+MIT License
 
 ---
 
 ## Autor
 
-Desarrollado para automatización de timbres escolares.
+Proyecto de **Edgar y Emmanuel** — automatización de timbres escolares
+(ESP32 + relé + aplicación de escritorio).

@@ -25,7 +25,7 @@ timbre-escolar-inteligente/
 │   └── package.json
 ├── firmware/               # Firmware ESP32 (PlatformIO)
 │   ├── src/
-│   │   ├── time/           # NTP + RTC
+│   │   ├── time/           # NTP + hora persistida en NVS
 │   │   ├── schedule/       # Almacenamiento + Scheduler
 │   │   ├── network/        # WiFi + WebServer + WebSocket
 │   │   ├── hardware/       # Relé + Watchdog
@@ -50,15 +50,25 @@ timbre-escolar-inteligente/
 - ESP32 DevKit V1
 
 ### Hardware
-- ESP32-WROOM-32E
-- Módulo relé 5V 1 canal (optoacoplado)
-- Fuente 5V 2A
-- DS3231 RTC (opcional, recomendado)
-- Caja IP65
+- ESP32-WROOM-32 DevKit V1
+- Módulo relé 5V 1 canal (optoacoplado, Songle SRD-05VDC-SL-C)
+- Timbre/escolar a 110V
+- Fuente 5V USB o 5V 2A
+- (Opcional) Módulo RTC DS3231: **no necesario**, la hora vive en NVS del ESP32 y se refresca con NTP
 
 ## Instalación
 
-### Aplicación Web
+### Aplicación de escritorio (usuario final) — sin comandos
+
+1. Ejecutar `app/src-tauri/target/release/bundle/msi/Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi`
+   (doble click → Sí en el UAC → Listo). También hay un instalador NSIS (`.exe`) en `bundle/nsis/`.
+2. Abrir **Timbre Escolar Inteligente** desde el Menú Inicio.
+3. Listo: arranca con Windows, se minimiza a la bandeja y **nunca se cierra sola**
+   (el botón de cerrar solo oculta la ventana; para salir: clic derecho en el icono de bandeja → Salir).
+
+Detalles completos en [docs/installation-guide.md](docs/installation-guide.md).
+
+### Aplicación Web (desarrollo)
 
 ```bash
 cd app
@@ -72,8 +82,10 @@ La aplicación estará disponible en `http://localhost:3000`
 
 1. Abrir `firmware/` en VS Code con PlatformIO
 2. Configurar credenciales WiFi en `src/config.h`
-3. Compilar y subir: `pio run --target upload`
-4. Subir archivos LittleFS: `pio run --target uploadfs`
+3. Compilar y subir (sube por cable USB): `pio run --target upload`
+4. (Opcional, OTA) `pio run -e esp32dev-ota --target upload`
+
+> LittleFS se formatea/monta en runtime (`LittleFS.begin(true)`), no existe paso `uploadfs`.
 
 ## Configuración
 
@@ -99,13 +111,24 @@ Por defecto: Guatemala (UTC-6)
 
 ## Uso
 
-1. **Acceder a la web**: `http://<IP_ESP32>` o `http://timbre-escolar.local`
+1. **Abrir la app** desde el Menú Inicio (o acceso directo en el escritorio, si se creó)
 2. **Login**: `admin@colegio.edu` / `admin123`
 3. **Configurar jornadas**: Matutina / Vespertina
 4. **Crear horarios**: Editor visual con drag & drop
 5. **Calendario**: Asignar horarios por fecha
-6. **Sincronizar**: Botón "Sincronizar" → ESP32
-7. **Probar**: Botón "Probar timbre" en panel Dispositivo
+6. **Conectar el timbre**: en Ajustes → WebSocket, poner la IP del ESP32
+   (`ws://<IP_ESP32>:81`) y el token (`timbre-escolar-2024`)
+7. **Sincronizar**: botón "Sincronizar" → ESP32
+8. **Probar**: botón "Probar timbre" en panel Dispositivo
+
+### Modo sin hardware (presentaciones / pruebas)
+
+```bash
+npm run mock        # en la raíz: simula el ESP32 en ws://localhost:81
+```
+
+La app usa `ws://localhost:81` por defecto, así que con el mock corriendo todo funciona
+sin tocar el ESP32. También existe el **Modo Demo** en la app (1 s = 1 min).
 
 ## API REST (ESP32)
 
@@ -117,7 +140,9 @@ Por defecto: Guatemala (UTC-6)
 | POST | `/api/bell/manual` | Timbre manual |
 | POST | `/api/bell/test` | Prueba de timbre |
 | GET | `/api/logs` | Historial de eventos |
+| GET/POST | `/api/config` | Configuración del dispositivo |
 | POST | `/api/reboot` | Reiniciar ESP32 |
+| POST | `/api/factory-reset` | Formatear LittleFS + reiniciar |
 
 ## WebSocket Events
 
@@ -130,6 +155,7 @@ Por defecto: Guatemala (UTC-6)
 **ESP32 → App:**
 - `status` - Estado periódico (cada 5s)
 - `sync:complete` - Sincronización exitosa
+- `time:sync` - Hora enviada al reconectar
 - `bell:executed` - Timbre ejecutado en tiempo real
 - `error` - Errores del sistema
 
@@ -138,20 +164,25 @@ Por defecto: Guatemala (UTC-6)
 ### Comandos útiles
 
 ```bash
-# App
-cd app
+# App (desde app/)
 npm run dev        # Desarrollo
 npm run build      # Producción
 npm run lint       # ESLint
 npm run typecheck  # TypeScript check
 npm run test       # Vitest
 
-# Firmware
-cd firmware
-pio run            # Compilar
-pio run -t upload  # Subir firmware
-pio run -t uploadfs # Subir LittleFS
-pio device monitor # Monitor serial
+# App de escritorio (desde app/)
+npm run tauri:dev      # Desarrollo con backend Rust
+npm run tauri:build    # Genera MSI + NSIS instaladores
+
+# Simulador ESP32 (desde la raíz)
+npm run mock           # ws://localhost:81
+
+# Firmware (desde firmware/)
+pio run                 # Compilar
+pio run -t upload       # Subir firmware (USB serial)
+pio run -e esp32dev-ota -t upload   # Subir por OTA (WiFi)
+pio device monitor      # Monitor serial
 ```
 
 ## Arquitectura
@@ -160,7 +191,7 @@ Ver [docs/architecture.md](docs/architecture.md) para detalles técnicos.
 
 ## Licencia
 
-MIT License - Ver [LICENSE](LICENSE)
+MIT License
 
 ## Créditos
 

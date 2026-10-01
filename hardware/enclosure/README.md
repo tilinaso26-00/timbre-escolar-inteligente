@@ -27,7 +27,7 @@
 │  │  │ USB │           │     │         │ IN  │           │    │
 │  │  └─────┘           └─────┘         └─────┘           │    │
 │  │                                                    │    │
-│  │  [DS3231]         [BORNE AC]       [BORNE TIMBRE]  │    │
+│  │  [FUENTE/USB]     [BORNE AC]       [BORNE TIMBRE]  │    │
 │  │  ┌─────┐          ┌─────────┐      ┌───────────┐   │    │
 │  │  │     │          │ L  N    │      │ L  N  ⏚   │   │    │
 │  │  └─────┘          └─────────┘      └───────────┘   │    │
@@ -44,7 +44,6 @@
 | ESP32 DevKit V1 | Esquina superior izq | Tornillos M3 x 4 (standoffs 10mm) | 55 x 28 x 15mm |
 | Buck Converter LM2596 | Centro superior | Tornillos M3 x 2 / Cinta 3M VHB | 43 x 21 x 14mm |
 | Módulo Relé 1ch | Esquina superior der | Tornillos M3 x 2 | 35 x 25 x 18mm |
-| DS3231 RTC | Junto a ESP32 | Pines header hembra / Socket | 14 x 10 x 8mm |
 | Bornes AC (2P) | Lado inferior izq | Tornillos M3 en pared caja | 25 x 20 x 15mm |
 | Bornes Timbre (3P) | Lado inferior der | Tornillos M3 en pared caja | 35 x 20 x 15mm |
 | LEDs (OK/ERROR) | Panel frontal | A presión / Calor | 5mm Ø c/u |
@@ -92,7 +91,7 @@ Taladros:
 
 ## Archivos 3D (Impresión 3D / CNC)
 
-### Formatos disponibles
+### Formatos planeados (aún no existen en el repo)
 - `enclosure.step` - Modelo STEP (editable en FreeCAD, Fusion 360, SolidWorks)
 - `enclosure.stl` - Malla para impresión 3D (FDM/SLA)
 - `enclosure.fcstd` - FreeCAD nativo (paramétrico)
@@ -114,15 +113,15 @@ Taladros:
 1. Lijar superficies de contacto (tapa/cuerpo) para sellado IP65
 2. Aplicar grasa silicona en junta tórica
 3. Tornillos M3x16mm acero inoxidable (x8) + arandelas
-6. Junta tórica: Ø160mm x 3mm (EPDM 70 ShA)
-7. Prensaestopas PG9 para cables (x2: AC + Timbre)
+4. Junta tórica: Ø160mm x 3mm (EPDM 70 ShA)
+5. Prensaestopas PG9 para cables (x2: AC + Timbre)
 
 ---
 
 ## Ensamblaje Paso a Paso
 
 1. **Preparar PCB/Componentes**
-   - Soldar headers en ESP32, DS3231, Relé, Buck
+   - Soldar headers en ESP32 y Relé (si aplica)
    - Verificar continuidad y cortocircuitos
 
 2. **Montar en base**
@@ -158,7 +157,10 @@ Taladros:
 
 ---
 
-## Archivos CAD
+## Archivos CAD (planeados)
+
+> Estos archivos aún **no existen** en el repositorio; esta es la lista objetivo cuando
+> se diseñen (FreeCAD o similar):
 
 ```
 hardware/enclosure/
@@ -202,5 +204,4 @@ hardware/enclosure/
 | Verificar sellado junta | Anual |
 | Limpiar ventilación (si aplica) | Semestral |
 | Probar botón reset + LEDs | Mensual |
-| Verificar batería RTC (CR2032) | Anual (cambiar c/ 3 años) |
 | Re-aplicar grasa silicona junta | Cada 2 años |
