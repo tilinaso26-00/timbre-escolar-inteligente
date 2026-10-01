@@ -6,11 +6,26 @@ pub mod hardware;
 pub mod state;
 pub mod utils;
 
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Manager, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_log::Builder::default()
             .level(log::LevelFilter::Info)
             .targets([
@@ -27,9 +42,19 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_clipboard::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(state::AppState::default())
         .manage(state::Esp32Connection::default())
         .manage(state::SerialConnection::default())
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             // ESP32 commands
             commands::esp32::esp32_connect,
@@ -72,7 +97,58 @@ pub fn run() {
             commands::schedule::update_event,
             commands::schedule::delete_event,
         ])
-        .setup(|_app| Ok(()))
+        .setup(|app| {
+            if let Err(error) = enable_autostart_once(app.handle()) {
+                log::warn!("No se pudo configurar el inicio automático: {error}");
+            }
+
+            let show_item = MenuItem::with_id(app, "show", "Mostrar ventana", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            let mut tray_builder = TrayIconBuilder::with_id("main-tray")
+                .tooltip("Timbre Escolar Inteligente")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => show_main_window(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main_window(tray.app_handle());
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            tray_builder.build(app)?;
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn enable_autostart_once(app: &tauri::AppHandle) -> anyhow::Result<()> {
+    use tauri_plugin_autostart::ManagerExt;
+
+    let config_dir = app.path().app_config_dir()?;
+    let marker = config_dir.join("autostart.enabled");
+    if marker.exists() {
+        return Ok(());
+    }
+
+    app.autolaunch().enable()?;
+    std::fs::create_dir_all(&config_dir)?;
+    std::fs::write(&marker, b"1")?;
+    log::info!("Inicio con Windows habilitado (se desactiva desde Configuración de Windows)");
+    Ok(())
 }

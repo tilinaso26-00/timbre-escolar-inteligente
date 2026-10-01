@@ -43,6 +43,21 @@ export async function initDB(): Promise<void> {
   await db.open();
 }
 
+const HISTORY_KEEP_DAYS = 180;
+const HISTORY_MAX_ROWS = 5000;
+
+export async function pruneHistory(): Promise<void> {
+  const cutoff = new Date(Date.now() - HISTORY_KEEP_DAYS * 86_400_000).toISOString();
+  await db.events.where('timestamp').below(cutoff).delete();
+
+  const total = await db.events.count();
+  if (total > HISTORY_MAX_ROWS) {
+    const excess = total - HISTORY_MAX_ROWS;
+    const oldestKeys = await db.events.orderBy('timestamp').limit(excess).primaryKeys();
+    await db.events.bulkDelete(oldestKeys);
+  }
+}
+
 export const journeysRepo = {
   getAll: () => db.journeys.toArray(),
   get: (journey: 'matutina' | 'vespertina') => db.journeys.get(journey),

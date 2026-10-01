@@ -4,6 +4,7 @@ import { ToastProvider } from '@shared/ui/Toast';
 import { Layout } from '@shared/layout';
 import { useAuth } from '@shared/hooks/useAuth';
 import { ThemeProvider } from '@shared/hooks/useTheme';
+import { pruneHistory } from '@core/storage/db';
 import { Login } from '@features/auth/Login';
 import { Dashboard } from '@features/dashboard/Dashboard';
 import { SchedulePage } from '@features/schedules/SchedulePage';
@@ -39,6 +40,21 @@ function SessionWatcher() {
       window.clearInterval(timer);
     };
   }, [isAuthenticated, idleTimeoutMinutes, logout, touch]);
+
+  return null;
+}
+
+function HistoryPruner() {
+  useEffect(() => {
+    const prune = () => {
+      pruneHistory().catch(() => {
+        /* el podado se reintenta en el próximo ciclo */
+      });
+    };
+    prune();
+    const timer = window.setInterval(prune, 6 * 60 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   return null;
 }
@@ -92,6 +108,7 @@ export default function App() {
     <ThemeProvider>
       <ToastProvider>
         <SessionWatcher />
+        <HistoryPruner />
         <AppRoutes />
       </ToastProvider>
     </ThemeProvider>
