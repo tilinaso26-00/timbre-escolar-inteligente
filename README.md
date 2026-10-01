@@ -162,6 +162,7 @@ Ver [docs/architecture.md](docs/architecture.md) para detalles técnicos.
 
 MIT License - Ver [LICENSE](LICENSE)
 
-## Autor
+## Créditos
 
-Desarrollado para automatización de timbres escolares.
+Proyecto creado por **Edgar y Emmanuel**. Timbre escolar inteligente para automatizar
+campanas y horarios de clase (ESP32 + relé + aplicación de escritorio).

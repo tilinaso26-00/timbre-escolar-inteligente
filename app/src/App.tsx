@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
 import { ToastProvider } from '@shared/ui/Toast';
 import { Layout } from '@shared/layout';
 import { useAuth } from '@shared/hooks/useAuth';
@@ -94,7 +93,6 @@ export default function App() {
       <ToastProvider>
         <SessionWatcher />
         <AppRoutes />
-        <Toaster position="bottom-right" />
       </ToastProvider>
     </ThemeProvider>
   );
