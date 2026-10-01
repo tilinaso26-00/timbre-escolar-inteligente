@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { liveQuery } from 'dexie';
 import type { BellEventLog } from '@core/schedule-engine';
 import { eventsRepo } from '@core/storage';
+import { useToast } from '@shared/ui/Toast';
 
 export interface HistoryFilters {
   dateFrom?: string;
@@ -13,6 +14,7 @@ export interface HistoryFilters {
 }
 
 export function useHistory() {
+  const { addToast } = useToast();
   const [events, setEvents] = useState<BellEventLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<HistoryFilters>({
@@ -32,10 +34,15 @@ export function useHistory() {
       setEvents(data);
     } catch (error) {
       console.error('Error loading history:', error);
+      addToast({
+        type: 'error',
+        title: 'No se pudo cargar el historial',
+        message: 'Intenta de nuevo en unos segundos.',
+      });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     const sub = liveQuery(() => eventsRepo.getAll(1000)).subscribe({
@@ -45,11 +52,16 @@ export function useHistory() {
       },
       error: error => {
         console.error('Error loading history:', error);
+        addToast({
+          type: 'error',
+          title: 'No se pudo cargar el historial',
+          message: 'Intenta de nuevo en unos segundos.',
+        });
         setLoading(false);
       },
     });
     return () => sub.unsubscribe();
-  }, []);
+  }, [addToast]);
 
   const filteredEvents = useMemo(() => {
     const dateFromIso = filters.dateFrom

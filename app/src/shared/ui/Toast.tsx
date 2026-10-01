@@ -7,6 +7,7 @@ export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 export interface Toast {
   id: string;
+  createdAt: number;
   type: ToastType;
   title: string;
   message?: string;
@@ -19,7 +20,8 @@ export interface Toast {
 
 interface ToastContextValue {
   toasts: Toast[];
-  addToast: (toast: Omit<Toast, 'id'>) => string;
+  history: Toast[];
+  addToast: (toast: Omit<Toast, 'id' | 'createdAt'>) => string;
   removeToast: (id: string) => void;
 }
 
@@ -39,11 +41,13 @@ interface ToastProviderProps {
 
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [history, setHistory] = useState<Toast[]>([]);
 
-  const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
+  const addToast = useCallback((toast: Omit<Toast, 'id' | 'createdAt'>) => {
     const id = Math.random().toString(36).slice(2, 9);
-    const newToast = { ...toast, id };
+    const newToast = { ...toast, id, createdAt: Date.now() };
     setToasts(prev => [...prev, newToast]);
+    setHistory(prev => [newToast, ...prev].slice(0, 20));
     return id;
   }, []);
 
@@ -52,7 +56,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
   }, []);
 
   return (
-    <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
+    <ToastContext.Provider value={{ toasts, history, addToast, removeToast }}>
       {children}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </ToastContext.Provider>

@@ -60,6 +60,12 @@ export function resolveWsToken(): string {
 type Listener = (state: BridgeState) => void;
 type NotifyFn = (notification: WSNotification) => void;
 
+let moduleNotifier: NotifyFn | null = null;
+
+function notifyToast(notification: WSNotification): void {
+  if (moduleNotifier) moduleNotifier(notification);
+}
+
 interface BridgeState {
   connected: boolean;
   deviceStatus: DeviceStatus | null;
@@ -167,6 +173,11 @@ async function persistBellEvent(data: Record<string, unknown>): Promise<void> {
     await eventsRepo.put(log);
   } catch (error) {
     console.error('Error guardando evento de timbre:', error);
+    notifyToast({
+      type: 'error',
+      title: 'No se pudo guardar el timbre',
+      message: 'El historial local falló al guardar el evento.',
+    });
   }
 }
 
@@ -186,7 +197,6 @@ function createBridge(): Bridge {
   let attempts = 0;
   let retryTimer: number | null = null;
   let timeSyncTimer: number | null = null;
-  let notifier: NotifyFn | null = null;
   const listeners = new Set<Listener>();
   const state: BridgeState = { connected: false, deviceStatus: null };
 
@@ -196,7 +206,7 @@ function createBridge(): Bridge {
   };
 
   const notify = (notification: WSNotification): void => {
-    if (notifier) notifier(notification);
+    notifyToast(notification);
   };
 
   const clearRetry = (): void => {
@@ -365,9 +375,9 @@ function createBridge(): Bridge {
       };
     },
     registerNotifier: nextNotifier => {
-      notifier = nextNotifier;
+      moduleNotifier = nextNotifier;
       return () => {
-        if (notifier === nextNotifier) notifier = null;
+        if (moduleNotifier === nextNotifier) moduleNotifier = null;
       };
     },
     send: (event, data) => {

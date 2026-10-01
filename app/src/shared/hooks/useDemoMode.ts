@@ -51,6 +51,31 @@ export function useDemoMode() {
     };
   }, []);
 
+  const triggerDemoEvent = useCallback((event: DemoEvent) => {
+    sendMessage('bell:manual', { durationSec: 3, demo: true, eventName: event.name });
+    addToast({
+      type: 'info',
+      title: `🔔 Demo: ${event.name}`,
+      message: `Simulado a las ${state.simulatedTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`,
+    });
+  }, [sendMessage, addToast, state.simulatedTime]);
+
+  const stopDemo = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    setState(prev => ({
+      ...prev,
+      running: false,
+      realStartTime: null,
+    }));
+
+    sendMessage('demo:stop', {});
+    addToast({ type: 'info', title: 'Modo Demo Detenido', message: 'Simulación finalizada' });
+  }, [sendMessage, addToast]);
+
   const startDemo = useCallback(() => {
     const now = Date.now();
     const today = new Date();
@@ -127,40 +152,13 @@ export function useDemoMode() {
 
     sendMessage('demo:start', { speed: state.speed });
     addToast({ type: 'info', title: 'Modo Demo Iniciado', message: `Simulación a ${state.speed}x velocidad` });
-  }, [state.speed, sendMessage]);
-
-  const stopDemo = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    setState(prev => ({
-      ...prev,
-      running: false,
-      realStartTime: null,
-    }));
-
-    sendMessage('demo:stop', {});
-    addToast({ type: 'info', title: 'Modo Demo Detenido', message: 'Simulación finalizada' });
-  }, [sendMessage]);
+  }, [state.speed, sendMessage, addToast, stopDemo, triggerDemoEvent]);
 
   const setSpeed = useCallback((speed: number) => {
     const newSpeed = Math.max(1, Math.min(1440, speed));
     setState(prev => ({ ...prev, speed: newSpeed }));
     sendMessage('demo:speed', { speed: newSpeed });
   }, [sendMessage]);
-
-  const triggerDemoEvent = useCallback((event: DemoEvent) => {
-    // Send manual bell trigger to device
-    sendMessage('bell:manual', { durationSec: 3, demo: true, eventName: event.name });
-
-    // Show toast
-    addToast({ type: 'info', title: `🔔 Demo: ${event.name}`, message: `Simulado a las ${state.simulatedTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` });
-
-    // Update next event in schedule
-    // This would normally be handled by the scheduler
-  }, [sendMessage, state.simulatedTime]);
 
   const triggerNextEvent = useCallback(() => {
     if (eventIndexRef.current < DEMO_EVENTS.length) {
@@ -173,7 +171,7 @@ export function useDemoMode() {
   const forceBell = useCallback(() => {
     sendMessage('bell:manual', { durationSec: 3, demo: true, eventName: 'Timbre Forzado Demo' });
     addToast({ type: 'info', title: 'Timbre Forzado', message: 'Timbre de demo activado manualmente' });
-  }, [sendMessage]);
+  }, [sendMessage, addToast]);
 
   const resetDemo = useCallback(() => {
     stopDemo();

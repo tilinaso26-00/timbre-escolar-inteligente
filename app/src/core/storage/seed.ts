@@ -141,6 +141,5 @@ export async function seedIfEmpty(): Promise<boolean> {
     createTemplate('seed-normal-ve', 'Horario Normal', 'Jornada completa con 5 períodos', 'vespertina', VESPERTINA_ROWS),
   ]);
 
-  console.log('Semilla: horarios de ejemplo creados');
   return true;
 }

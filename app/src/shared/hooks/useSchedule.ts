@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { useWebSocket } from './useWebSocket';
+import { useToast } from '@shared/ui/Toast';
 import {
   journeysRepo,
   templatesRepo,
@@ -17,6 +18,7 @@ const TIMEZONE = 'America/Guatemala';
 
 export function useSchedule() {
   const { connected, deviceStatus, sendMessage } = useWebSocket();
+  const { addToast } = useToast();
 
   const [journeys, setJourneys] = useState<JourneySchedule[]>([]);
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([]);
@@ -28,11 +30,7 @@ export function useSchedule() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [nextEvent, setNextEvent] = useState<{ name: string; at: string; inMs: number } | null>(null);
 
-  useEffect(() => {
-    loadAllData();
-  }, []);
-
-  const loadAllData = async () => {
+  const loadAllData = useCallback(async () => {
     try {
       await seedIfEmpty();
       const [j, t, e, ev, c] = await Promise.all([
@@ -49,10 +47,19 @@ export function useSchedule() {
       setConfig(c);
     } catch (error) {
       console.error('Error loading data:', error);
+      addToast({
+        type: 'error',
+        title: 'No se pudieron cargar los datos',
+        message: 'Revisa el almacenamiento local e intenta de nuevo.',
+      });
     } finally {
       setLoading(false);
     }
-  };
+  }, [addToast]);
+
+  useEffect(() => {
+    loadAllData();
+  }, [loadAllData]);
 
   const updateNextEvent = useCallback(() => {
     const now = toZonedTime(new Date(), TIMEZONE);

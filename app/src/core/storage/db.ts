@@ -41,7 +41,6 @@ export const db = new TimbreDB();
 
 export async function initDB(): Promise<void> {
   await db.open();
-  console.log('Database initialized');
 }
 
 export const journeysRepo = {

@@ -95,7 +95,6 @@ export function recalculatePeriods(input: PeriodCalculationInput): PeriodCalcula
 
 function calculateTotalDuration(journey: JourneySchedule, periodMinutes: number): number {
   let total = 0;
-  let periodCount = 0;
 
   for (const event of journey.events) {
     if (event.isFixed) continue;
@@ -106,7 +105,6 @@ function calculateTotalDuration(journey: JourneySchedule, periodMinutes: number)
     }
     if (event.type === 'cambio_periodo' || event.type === 'actividad_especial') {
       total += periodMinutes;
-      periodCount++;
     }
   }
 

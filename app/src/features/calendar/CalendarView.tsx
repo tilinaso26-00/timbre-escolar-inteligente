@@ -179,7 +179,8 @@ export function CalendarView({
             classNames={{
               root: 'rdp',
               month: 'rdp-month',
-              nav: 'rdp-nav',
+              month_caption: 'hidden',
+              nav: 'hidden',
               weekdays: 'rdp-weekdays',
               weekday: 'rdp-weekday',
               week_number: 'rdp-weeknumber',

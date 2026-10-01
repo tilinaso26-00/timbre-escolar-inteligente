@@ -33,4 +33,13 @@ module.exports = {
     '@typescript-eslint/no-misused-promises': 'off',
     'react-hooks/exhaustive-deps': 'warn',
   },
+  overrides: [
+    {
+      files: ['src/shared/ui/Toast.tsx', 'src/shared/hooks/useTheme.tsx'],
+      rules: {
+        // Provider y hook se mantienen juntos a propósito (contexto + API pública)
+        'react-refresh/only-export-components': 'off',
+      },
+    },
+  ],
 }
