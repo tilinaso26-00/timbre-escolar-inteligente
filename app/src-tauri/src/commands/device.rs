@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-use tauri::{command, State};
-use crate::state::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeviceInfo {
@@ -48,7 +46,7 @@ pub async fn device_get_info(state: tauri::State<'_, crate::state::AppState>) ->
     let config = state.device_config.as_ref();
     Ok(DeviceInfo {
         device_id: config.map(|c| c.device_id.clone()).unwrap_or_default(),
-        firmware_version: config.and_then(|c| c.firmware_version.clone()).unwrap_or_default(),
+        firmware_version: config.map(|c| c.firmware_version.clone()).unwrap_or_default(),
         uptime: 0,
         free_heap: 0,
         wifi_rssi: 0,
@@ -74,12 +72,10 @@ pub async fn device_test_bell(
             "event": "bell:test",
             "data": { "durationSec": duration }
         });
-        if let Some(sender) = &conn.sender {
-            sender.send(tokio_tungstenite::tungstenite::protocol::Message::Text(serde_json::to_string(&payload).unwrap()))
-                .map_err(|e| format!("Error sending test bell: {}", e))
-        } else {
-            Err("Not connected to ESP32".to_string())
-        }
+        sender.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+            serde_json::to_string(&payload).unwrap().into(),
+        ))
+        .map_err(|e| format!("Error sending test bell: {}", e))
     } else {
         Err("Not connected to ESP32".to_string())
     }
@@ -96,11 +92,10 @@ pub async fn device_manual_bell(
             "event": "bell:manual",
             "data": { "durationSec": duration }
         });
-        sender.send(tokio_tungstenite::tungstenite::protocol::Message::Text(serde_json::to_string(&serde_json::json!({
-            "event": "bell:manual",
-            "data": { "durationSec": duration }
-        })).unwrap()))
-            .map_err(|e| format!("Error sending manual bell: {}", e))
+        sender.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+            serde_json::to_string(&payload).unwrap().into(),
+        ))
+        .map_err(|e| format!("Error sending manual bell: {}", e))
     } else {
         Err("Not connected to ESP32".to_string())
     }

@@ -40,6 +40,10 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    host: 'localhost'
+    host: 'localhost',
+    watch: {
+      // Evita EBUSY en Windows: Vite no debe vigilar el binario de Rust
+      ignored: ['**/src-tauri/**']
+    }
   }
 })

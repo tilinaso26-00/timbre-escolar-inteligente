@@ -1,23 +1,33 @@
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use tokio_tungstenite::tungstenite::protocol::Message;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use tokio::net::TcpStream;
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use tokio::net::TcpStream;
 use futures_util::{SinkExt, StreamExt};
-use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex as TokioMutex;
-use tokio::sync::mpsc;
-use tokio::sync::Mutex as TokioMutex;
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use tauri::{AppHandle, Emitter};
+use serde::{Deserialize, Serialize};
+use tauri::Emitter;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::task::JoinHandle;
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WebSocketConfig {
+    pub host: String,
+    pub port: u16,
+    pub path: Option<String>,
+    pub token: String,
+}
+
+impl Default for WebSocketConfig {
+    fn default() -> Self {
+        Self {
+            host: "192.168.4.1".to_string(),
+            port: 81,
+            path: Some("/".to_string()),
+            token: "timbre-escolar-2024".to_string(),
+        }
+    }
+}
 
 pub struct WebSocketClient {
-    sender: Option<mpsc::UnboundedSender<tokio_tungstenite::tungstenite::protocol::Message>>,
-    task_handle: Option<tokio::task::JoinHandle<()>>,
-    config: WebSocketConfig,
+    sender: Option<UnboundedSender<Message>>,
+    task_handle: Option<JoinHandle<()>>,
+    pub config: WebSocketConfig,
 }
 
 impl Default for WebSocketClient {
@@ -31,109 +41,110 @@ impl Default for WebSocketClient {
 }
 
 impl WebSocketClient {
-    pub async fn connect(&mut self, config: WebSocketConfig, app_handle: tauri::AppHandle) -> Result<(), String> {
-        self.config = config.clone();
-        
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    pub fn url(&self) -> String {
+        format!(
+            "ws://{}:{}{}",
+            self.config.host,
+            self.config.port,
+            self.config.path.as_deref().unwrap_or("/")
+        )
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.sender.is_some()
+    }
+
+    pub fn send(&self, event: &str, data: serde_json::Value) -> Result<(), String> {
+        let payload = serde_json::json!({ "event": event, "data": data, "token": self.config.token });
+        let text = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+        match &self.sender {
+            Some(sender) => sender.send(Message::Text(text.into())).map_err(|e| e.to_string()),
+            None => Err("Sin conexión con el dispositivo".to_string()),
+        }
+    }
+
+    pub fn connect(&mut self, config: WebSocketConfig, app_handle: tauri::AppHandle) {
+        self.disconnect();
+        self.config = config;
+        let url = self.url();
+
+        let (tx, rx) = unbounded_channel::<Message>();
         self.sender = Some(tx);
-        
-        let config = self.config.clone();
-        let app_handle = app_handle.clone();
-        
-        let handle = tokio::spawn(async move {
-            loop {
-                match Self::connect_with_retry(&config).await {
-                    Ok((ws_stream, _)) => {
-                        let (mut write, mut read) = ws_stream.split();
-                        
-                        // Send auth
-                        let auth_msg = serde_json::json!({
-                            "event": "auth",
-                            "data": { "token": config.token }
-                        });
-                        if write.send(Message::Text(serde_json::to_string(&auth_msg).unwrap())).await.is_err() {
-                            continue;
-                        }
-                        
-                        // Spawn writer task
-                        let write_task = tokio::spawn(async move {
-                            while let Some(msg) = rx.recv().await {
-                                if write.send(msg).await.is_err() {
-                                    break;
-                                }
-                            }
-                        });
-                        
-                        // Read loop
-                        while let Some(msg) = read.next().await {
-                            match msg {
-                                Ok(Message::Text(text)) => {
-                                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                                        if let Some(event) = json.get("event").and_then(|v| v.as_str()) {
-                                            match event {
-                                                "status" => {
-                                                    if let Some(data) = json.get("data") {
-                                                        let _ = app_handle.emit("esp32:status", data);
-                                                    }
-                                                }
-                                                "sync:complete" => {
-                                                    let _ = app_handle.emit("sync:complete", json.get("data"));
-                                                }
-                                                "sync:error" => {
-                                                    let _ = app_handle.emit("sync:error", json.get("data"));
-                                                }
-                                                "bell:executed" => {
-                                                    let _ = app_handle.emit("bell:executed", json.get("data"));
-                                                }
-                                                "error" => {
-                                                    let _ = app_handle.emit("esp32:error", json.get("data"));
-                                                }
-                                                _ => {}
-                                            }
-                                        }
+
+        let handle = tokio::spawn(run_connection(url, rx, app_handle));
+        self.task_handle = Some(handle);
+    }
+
+    pub fn disconnect(&mut self) {
+        if let Some(handle) = self.task_handle.take() {
+            handle.abort();
+        }
+        self.sender = None;
+    }
+}
+
+async fn run_connection(url: String, mut rx: UnboundedReceiver<Message>, app_handle: tauri::AppHandle) {
+    loop {
+        match connect_async(url.as_str()).await {
+            Ok((ws_stream, _)) => {
+                tracing::info!("Conectado al ESP32 en {}", url);
+                let _ = app_handle.emit("esp32:connected", true);
+                let (mut write, mut read) = ws_stream.split();
+
+                loop {
+                    tokio::select! {
+                        outbound = rx.recv() => {
+                            match outbound {
+                                Some(message) => {
+                                    if write.send(message).await.is_err() {
+                                        break;
                                     }
                                 }
-                                Err(e) => {
-                                    tracing::error!("WS error: {}", e);
-                                    break;
-                                }
+                                None => return,
                             }
                         }
-                        Err(e) => {
-                            tracing::error!("Connection failed: {}", e);
-                            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                        inbound = read.next() => {
+                            match inbound {
+                                Some(Ok(Message::Text(text))) => forward(&app_handle, &text),
+                                Some(Ok(_)) => {}
+                                Some(Err(error)) => {
+                                    tracing::error!("Error de WebSocket: {}", error);
+                                    break;
+                                }
+                                None => break,
+                            }
                         }
                     }
                 }
-            });
+
+                let _ = app_handle.emit("esp32:connected", false);
+            }
+            Err(error) => {
+                tracing::warn!("No se pudo conectar al ESP32: {}", error);
+            }
         }
-    }
-    
-    async fn connect_with_retry(
-        config: &WebSocketConfig,
-    ) -> Result<(tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>, tokio_tungstenite::tungstenite::handshake::client::Response), Box<dyn std::error::Error + Send + Sync>> {
-        let url = format!("ws://{}:{}{}", config.host, config.port, config.path.as_deref().unwrap_or(""));
-        let request = url::Url::parse(&url)?.into_client_request()?;
-        let (ws_stream, response) = tokio_tungstenite::connect_async(request).await?;
-        Ok((ws_stream, response))
+
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct WebSocketConfig {
-    pub host: String,
-    pub port: u16,
-    pub path: Option<String>,
-    pub token: String,
-}
+fn forward(app_handle: &tauri::AppHandle, text: &str) {
+    let Ok(payload) = serde_json::from_str::<serde_json::Value>(text) else {
+        return;
+    };
+    let Some(event) = payload.get("event").and_then(|v| v.as_str()) else {
+        return;
+    };
+    let data = payload.get("data").cloned();
 
-impl Default for WebSocketConfig {
-    fn default() -> Self {
-        Self {
-            host: "192.168.1.100".to_string(),
-            port: 81,
-            path: Some("/".to_string()),
-            token: "timbre-escolar-2024".to_string(),
-        }
-    }
+    let channel = match event {
+        "status" => "esp32:status",
+        "sync:complete" => "sync:complete",
+        "sync:error" => "sync:error",
+        "bell:executed" => "bell:executed",
+        "error" => "esp32:error",
+        _ => return,
+    };
+
+    let _ = app_handle.emit(channel, data);
 }

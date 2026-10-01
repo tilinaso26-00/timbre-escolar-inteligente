@@ -6,20 +6,10 @@ pub mod hardware;
 pub mod state;
 pub mod utils;
 
-use std::sync::Arc;
-use std::sync::Mutex;
-use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
-
-mod commands;
-mod hardware;
-mod state;
-mod utils;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let state = state::AppState::default();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default()
             .level(log::LevelFilter::Info)
@@ -35,11 +25,11 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard::init())
         .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_plugin_clipboard::init())
         .manage(state::AppState::default())
+        .manage(state::Esp32Connection::default())
+        .manage(state::SerialConnection::default())
         .invoke_handler(tauri::generate_handler![
             // ESP32 commands
             commands::esp32::esp32_connect,
@@ -82,14 +72,7 @@ pub fn run() {
             commands::schedule::update_event,
             commands::schedule::delete_event,
         ])
-        .setup(|app| {
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                // Initialize the ESP32 connection on startup if configured
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            });
-            Ok(())
-        })
+        .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

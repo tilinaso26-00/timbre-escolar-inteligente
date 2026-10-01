@@ -21,46 +21,14 @@
       "resizable": true,
       "fullscreen": false,
       "center": true,
-      "titleBarStyle": "visible",
+      "titleBarStyle": "Visible",
       "hiddenTitle": false,
       "visible": true,
-      "resizable": true,
       "decorations": true,
       "transparent": false,
       "alwaysOnTop": false,
-      "contentProtection": false,
+      "contentProtected": false,
       "focus": true,
-      "hiddenTitle": false,
-      "maximizable": true,
-      "minimizable": true,
-      "closable": true
-    }],
-    "security": {
-      "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://* wss://* http://* https://*; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self';"
-    }
-  },
-  "app": {
-    "windows": [{
-      "title": "Timbre Escolar Inteligente",
-      "label": "main",
-      "url": "/",
-      "width": 1280,
-      "height": 800,
-      "minWidth": 1024,
-      "minHeight": 768,
-      "resizable": true,
-      "fullscreen": false,
-      "center": true,
-      "titleBarStyle": "visible",
-      "hiddenTitle": false,
-      "visible": true,
-      "resizable": true,
-      "decorations": true,
-      "transparent": false,
-      "alwaysOnTop": false,
-      "contentProtection": false,
-      "focus": true,
-      "hiddenTitle": false,
       "maximizable": true,
       "minimizable": true,
       "closable": true
@@ -81,8 +49,7 @@
     ],
     "windows": {
       "wix": {
-        "language": "es-ES",
-        "template": "templates/wix/main.wxs"
+        "language": "es-ES"
       }
     },
     "macOS": {
@@ -97,31 +64,11 @@
       "deb": {
         "depends": [],
         "conflicts": [],
-        "provides": [],
         "replaces": [],
         "section": "utils",
         "priority": "optional"
       }
     }
   },
-  "plugins": {
-    "fs": {
-      "all": true,
-      "scope": {
-        "allowed": ["$APPDATA/*", "$APPDATA/timbre-escolar/*", "$HOME/*", "$DOCUMENTS/*", "$DOWNLOADS/*"]
-      }
-    },
-    "shell": {
-      "all": false,
-      "open": true,
-      "scope": {
-        "allow": ["open", "https://*", "http://*"]
-      }
-    },
-    "updater": {
-      "active": false,
-      "endpoints": [],
-      "dialog": true,
-      "pubkey": ""
-    }
-  }
+  "plugins": {}
+}

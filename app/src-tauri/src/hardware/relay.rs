@@ -1,9 +1,9 @@
 use std::sync::{Arc, Mutex};
-use tauri::{command, State};
-use std::sync::{Arc, Mutex};
+use tauri::State;
 
 pub struct RelayController {
     pin: u32,
+    #[allow(dead_code)]
     active_low: bool,
     safety_max_on_ms: u32,
     state: Arc<Mutex<bool>>,
@@ -30,33 +30,36 @@ impl RelayController {
         }
     }
 
+    pub fn pin(&self) -> u32 {
+        self.pin
+    }
+
     pub async fn activate(&self, duration_ms: u32) -> Result<(), String> {
         let duration = std::cmp::min(duration_ms, self.safety_max_on_ms);
-        
-        // Here you would implement the actual GPIO control
-        // For now, we just track the state
-        let mut state = self.state.lock().await;
-        *state = true;
-        
-        // Schedule automatic turn off
-        let state_clone = self.state.clone();
+
+        {
+            let mut state = self.state.lock().unwrap();
+            *state = true;
+        }
+
+        let state_clone = Arc::clone(&self.state);
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(duration as u64)).await;
-            let mut state = state_clone.lock().await;
+            let mut state = state_clone.lock().unwrap();
             *state = false;
         });
-        
+
         Ok(())
     }
 
     pub async fn deactivate(&self) -> Result<(), String> {
-        let mut state = self.state.lock().await;
+        let mut state = self.state.lock().unwrap();
         *state = false;
         Ok(())
     }
 
     pub async fn get_state(&self) -> bool {
-        *self.state.lock().await
+        *self.state.lock().unwrap()
     }
 }
 

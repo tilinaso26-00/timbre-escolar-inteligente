@@ -1,75 +1,42 @@
-use serde::{Deserialize, Serialize};
-use tauri::{command, State};
-use serialport::{SerialPort, SerialPortType};
-use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex as TokioMutex;
-use tokio_serial::SerialStream;
-use std::sync::{Arc, Mutex as StdMutex};
-use tokio::sync::Mutex as TokioMutex;
-use tokio_serial::SerialStream;
-use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use std::io::{Read, Write};
+use tauri::{Emitter, State};
 
-pub struct SerialConnection {
-    port: Option<Arc<StdMutex<Box<dyn SerialPort>>>>,
-    reader_task: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl Default for SerialConnection {
-    fn default() -> Self {
-        Self { port: None, reader_task: None }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SerialConfig {
-    pub port_name: String,
-    pub baud_rate: u32,
-    pub data_bits: u8,
-    pub stop_bits: u8,
-    pub parity: String,
-    pub flow_control: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SerialPortInfo {
-    pub name: String,
-    pub port_type: String,
-}
+use crate::state::{SerialConfig, SerialConnection, SerialPortInfo};
 
 #[tauri::command]
 pub async fn serial_list_ports() -> Result<Vec<SerialPortInfo>, String> {
     let ports = serialport::available_ports().map_err(|e| e.to_string())?;
-    Ok(ports.into_iter().map(|p| SerialPortInfo {
-        name: p.port_name,
-        port_type: format!("{:?}", p.port_type),
-    }).collect())
+    Ok(ports
+        .into_iter()
+        .map(|p| SerialPortInfo {
+            name: p.port_name,
+            port_type: format!("{:?}", p.port_type),
+        })
+        .collect())
 }
 
 #[tauri::command]
 pub async fn serial_connect(
     config: SerialConfig,
-    state: tauri::State<'_, crate::state::SerialConnection>,
+    state: State<'_, SerialConnection>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let mut conn = state.lock().await;
 
-    // Close previous connection
     if let Some(task) = conn.reader_task.take() {
         task.abort();
     }
     conn.port = None;
 
-    let builder = serialport::new(&config.port_name, config.baud_rate)
-        .timeout(std::time::Duration::from_millis(1000));
+    let builder =
+        serialport::new(&config.port_name, config.baud_rate).timeout(std::time::Duration::from_millis(1000));
 
     let port = builder.open().map_err(|e| e.to_string())?;
-    let port = Arc::new(tokio::sync::Mutex::new(port));
+    let port = std::sync::Arc::new(tokio::sync::Mutex::new(port));
 
     let port_clone = port.clone();
     let app_handle = app.clone();
 
-    // Reader task
     let task = tokio::spawn(async move {
         let mut buf = vec![0u8; 1024];
         loop {
@@ -95,7 +62,7 @@ pub async fn serial_connect(
 }
 
 #[tauri::command]
-pub async fn serial_write(data: String, state: tauri::State<'_, crate::state::SerialConnection>) -> Result<(), String> {
+pub async fn serial_write(data: String, state: State<'_, SerialConnection>) -> Result<(), String> {
     let conn = state.lock().await;
     if let Some(port) = &conn.port {
         let mut port = port.lock().await;
@@ -108,7 +75,7 @@ pub async fn serial_write(data: String, state: tauri::State<'_, crate::state::Se
 }
 
 #[tauri::command]
-pub async fn serial_disconnect(state: tauri::State<'_, crate::state::SerialConnection>) -> Result<(), String> {
+pub async fn serial_disconnect(state: State<'_, SerialConnection>) -> Result<(), String> {
     let mut conn = state.lock().await;
     if let Some(task) = conn.reader_task.take() {
         task.abort();
@@ -116,3 +83,6 @@ pub async fn serial_disconnect(state: tauri::State<'_, crate::state::SerialConne
     conn.port = None;
     Ok(())
 }
+
+#[allow(unused_imports)]
+use serde_json as _unused_json;

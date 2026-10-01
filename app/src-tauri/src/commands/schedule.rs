@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{command, State};
-use crate::state::AppState;
-use crate::state::ScheduleStore;
+use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SyncPayload {
@@ -161,7 +159,7 @@ pub async fn get_events_for_date(
 ) -> Result<Vec<crate::state::ScheduleEvent>, String> {
     let state = state.lock().await;
     let resolved = state.resolve_schedule_for_date(&date, &journey).await.map_err(|e| e.to_string())?;
-    Ok(resolved.events)
+    Ok(resolved.map(|day| day.events).unwrap_or_default())
 }
 
 #[tauri::command]

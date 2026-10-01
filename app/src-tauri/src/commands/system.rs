@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{command, State};
-use crate::state::AppState;
+use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SystemInfo {
