@@ -1,16 +1,20 @@
 # Timbre Escolar Inteligente
 
-Sistema completo de automatización de timbres escolares con interfaz web moderna y controlador ESP32.
+Sistema completo de automatización de timbres escolares: **aplicación de escritorio**
+(React + Tauri) que controla un **ESP32 + relé** para sonar la campana sola.
+
+Repo: https://github.com/tilinaso26-00/timbre-escolar-inteligente (privada)
 
 ## Características
 
-- **Interfaz Web Moderna**: React + TypeScript + Tailwind CSS
-- **Horarios Dinámicos**: Cálculo automático de períodos con ajustes ±5/10/15 min
-- **Calendario Académico**: Excepciones, días sin clases, plantillas por fecha
-- **Controlador ESP32**: Ejecución autónoma, sincronización WiFi, funcionamiento offline
-- **Modo Demo**: Aceleración de tiempo para presentaciones (1s = 1min)
-- **PWA**: Instalable, funciona offline
-- **Seguridad**: Autenticación, validación, watchdog hardware
+- **App de escritorio**: doble click, icono en bandeja, arranca con Windows, 24/7
+  (el botón X solo oculta; para salir: clic derecho en bandeja → Salir)
+- **Interfaz moderna**: React + TypeScript + Tailwind CSS
+- **Horarios dinámicos**: cálculo automático de períodos con ajustes ±5/10/15 min
+- **Calendario académico**: excepciones, días sin clases, plantillas por fecha
+- **Controlador ESP32**: ejecución autónoma, hora en NVS (sobrevive apagones), offline
+- **Modo Demo + mock**: presentaciones (1 s = 1 min) y simulador ESP32 (`npm run mock`)
+- **Seguridad**: autenticación, validación, watchdog hardware
 
 ## Estructura del Proyecto
 
@@ -41,15 +45,28 @@ timbre-escolar-inteligente/
 
 ## Requisitos
 
-### Desarrollo Web
-- Node.js 18+
-- npm 9+
+### A) Solo usar la app en otro PC — **no se instala nada más**
+- Windows 10/11 64 bits
+- Descargar el instalador de la última **Release**
+  (https://github.com/tilinaso26-00/timbre-escolar-inteligente/releases/latest)
+  → doble click → **Listo**
 
-### Firmware ESP32
+### B) Programas para compilar/desarrollar
+| Programa | Para qué | Instalación |
+|----------|----------|-------------|
+| **Git** | clonar la repo | `winget install Git.Git` |
+| **Node.js 18+** (con npm) | app React / Tauri | `winget install OpenJS.NodeJS.LTS` |
+| **Rust** (rustup) | backend de la app | `winget install Rustlang.Rust.GNU` |
+| **VS 2022 Build Tools** | compilar el Rust de Windows | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.NativeDesktop --quiet"` |
+| **PlatformIO** | compilar/subir el ESP32 | extensión de VS Code o `pip install platformio` |
+
+Ver comandos exactos en [COMANDOS_TIMBRE_ESCOLAR.txt](COMANDOS_TIMBRE_ESCOLAR.txt).
+
+### C) Firmware ESP32
 - PlatformIO (VS Code extension o CLI)
 - ESP32 DevKit V1
 
-### Hardware
+### D) Hardware (montaje físico del timbre)
 - ESP32-WROOM-32 DevKit V1
 - Módulo relé 5V 1 canal (optoacoplado, Songle SRD-05VDC-SL-C)
 - Timbre/escolar a 110V
@@ -58,13 +75,19 @@ timbre-escolar-inteligente/
 
 ## Instalación
 
-### Aplicación de escritorio (usuario final) — sin comandos
+### Aplicación de escritorio (otro PC) — sin comandos, 3 pasos
 
-1. Ejecutar `app/src-tauri/target/release/bundle/msi/Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi`
-   (doble click → Sí en el UAC → Listo). También hay un instalador NSIS (`.exe`) en `bundle/nsis/`.
-2. Abrir **Timbre Escolar Inteligente** desde el Menú Inicio.
-3. Listo: arranca con Windows, se minimiza a la bandeja y **nunca se cierra sola**
-   (el botón de cerrar solo oculta la ventana; para salir: clic derecho en el icono de bandeja → Salir).
+1. Abrir la última Release:
+   https://github.com/tilinaso26-00/timbre-escolar-inteligente/releases/latest
+2. Descargar `Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi` (o el `.exe`/NSIS)
+   y hacer **doble click → Sí (UAC) → Listo**
+3. Abrir **Timbre Escolar Inteligente** desde el Menú Inicio.
+
+> Listo: queda en la bandeja, arranca con Windows y **nunca se cierra sola**
+> (el X solo oculta; para salir: clic derecho en el icono de bandeja → Salir).
+
+Si prefieres compilarlo desde el código: `cd app && npm install && npm run tauri:build`
+(el instalador queda en `app/src-tauri/target/release/bundle/`).
 
 Detalles completos en [docs/installation-guide.md](docs/installation-guide.md).
 
@@ -86,6 +109,21 @@ La aplicación estará disponible en `http://localhost:3000`
 4. (Opcional, OTA) `pio run -e esp32dev-ota --target upload`
 
 > LittleFS se formatea/monta en runtime (`LittleFS.begin(true)`), no existe paso `uploadfs`.
+
+## Instalación hardware (resumen)
+
+Piezas: **ESP32 DevKit V1 + módulo relé 5V (Songle SRD-05VDC-SL-C, optoacoplado)
++ timbre 110V + fuente 5V** (no hace falta RTC DS3231).
+
+1. `GPIO23` del ESP32 → **IN** del relé; `GND` → GND del relé; `5V` → VCC del relé
+2. Relé **COM** → línea (L) de la red; relé **NO** → el timbre; neutro (N) → timbre
+3. Fusible 2A en la línea; tierra al chasis; **nunca trabajar enchufado**
+4. WiFi del colegio: editar `firmware/src/config.h` (`WIFI_SSID`/`WIFI_PASSWORD`)
+5. Subir firmware por USB: `pio run --target upload`
+
+Detalle e imágenes: [hardware/wiring/README.md](hardware/wiring/README.md),
+[hardware/schematic/README.md](hardware/schematic/README.md),
+[docs/installation-guide.md](docs/installation-guide.md).
 
 ## Configuración
 
