@@ -292,7 +292,7 @@ R: Solo Español. i18n preparado: Config → General → Idioma (preparado para 
 
 | Versión | Fecha | Cambios Principales |
 |---------|-------|---------------------|
-| v1.0.1 | 2026-10 | ESP32 autónomo: red propia `TimbreEscolar-Setup` siempre encendida + unión al WiFi del colegio (`WIFI_AP_STA`), historial propio guardado en LittleFS (`HistoryLog`, 150 eventos, `/api/history` + WS `history:request`), app con descubrimiento automático (mDNS → 192.168.4.1 → local) e importación de historial con dedup, control desde el celular (`npm run serve`), logs WARN/ERROR en `/logs/timbre.log`, docs de requisitos completos (Python, Git, Rust, Build Tools) |
+| v1.0.1 | 2026-10 | ESP32 autónomo: red propia `TimbreEscolar-Setup` siempre encendida + unión al WiFi del colegio (`WIFI_AP_STA`), historial propio guardado en LittleFS (`HistoryLog`, 150 eventos, `/api/history` + WS `history:request`), app con descubrimiento automático (mDNS → 192.168.4.1 → local) e importación de historial con dedup, control desde el celular (`npm run serve`), logs WARN/ERROR en `/logs/timbre.log`, docs de requisitos completos (Python, Git, Rust, Build Tools). Build corregida 2026-10-09: import completo en bloques (respeta `total`/`done`), tipo y origen reales de los eventos importados, timestamp único entre evento vivo e historial (sin duplicados ni fechas `----/--/---`), `npm run serve` ya no se cae con URLs malformadas |
 | v1.0.0 | 2026-09 | App de escritorio Tauri (bandeja, arranque con Windows, ventana única, logs, poda del historial), Dashboard, Editor Horarios, Calendario, Plantillas, Historial, Dispositivo, Config, Demo Mode, Sync WS/REST, Auth, PWA, mock ESP32 (`npm run mock`), firmware con hora en NVS, subida serial por defecto + OTA opcional |
 
 ---
