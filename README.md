@@ -113,7 +113,8 @@ Notas:
 
 1. Abrir la última Release:
    https://github.com/tilinaso26-00/timbre-escolar-inteligente/releases/latest
-2. Descargar `Timbre Escolar Inteligente_1.0.1_x64_es-ES.msi` (o el `.exe`/NSIS)
+2. Descargar `Timbre-Escolar-Inteligente_1.0.1_x64_es-ES.msi` (o el `.exe`/NSIS;
+   en la Release los nombres van con guiones)
    y hacer **doble click → Sí (UAC) → Listo**
 3. Abrir **Timbre Escolar Inteligente** desde el Menú Inicio.
 
