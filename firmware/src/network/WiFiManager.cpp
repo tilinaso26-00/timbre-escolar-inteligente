@@ -2,66 +2,108 @@
 #include "config.h"
 #include "utils/Logger.h"
 
-WiFiManager::WiFiManager() : fallbackAP(false) {
+WiFiManager::WiFiManager() {
     strcpy(ssid, "");
     strcpy(password, "");
     strcpy(apSSID, AP_SSID);
     strcpy(apPassword, AP_PASSWORD);
 }
 
-void WiFiManager::init(const char* s, const char* pass, bool fallback, const char* apSsid, const char* apPass) {
+void WiFiManager::init(const char* s, const char* pass, bool staOn, bool apOn,
+                       const char* apSsid, const char* apPass, int maxClients) {
     strncpy(ssid, s, sizeof(ssid) - 1);
     strncpy(password, pass, sizeof(password) - 1);
-    fallbackAP = fallback;
+    staEnabled = staOn;
+    apAlways = apOn;
     strncpy(apSSID, apSsid, sizeof(apSSID) - 1);
     strncpy(apPassword, apPass, sizeof(apPassword) - 1);
+    if (maxClients < 1) maxClients = 1;
 
-    WiFi.mode(WIFI_STA);
+    // Red propia SIEMPRE encendida + unión al colegio si está habilitada.
+    if (staEnabled && apAlways) {
+        WiFi.mode(WIFI_AP_STA);
+    } else if (apAlways) {
+        WiFi.mode(WIFI_AP);
+    } else {
+        WiFi.mode(WIFI_STA);
+    }
+
+    if (apAlways) {
+        WiFi.softAP(apSSID, apPassword, 1 /*canal*/, 0 /*oculto*/, maxClients);
+        WiFi.softAPsetHostname("timbre-escolar");
+        apActive = true;
+        logger.info("Red propia encendida: %s (IP %s)",
+                    apSSID, WiFi.softAPIP().toString().c_str());
+    }
+
     WiFi.setHostname("timbre-escolar");
+    WiFi.setAutoReconnect(true);
 }
 
 void WiFiManager::connect() {
+    if (!staEnabled) {
+        logger.info("Unión a red del colegio deshabilitada (solo AP)");
+        return;
+    }
+
     if (strlen(ssid) == 0) {
-        logger.warn("SSID vacío, iniciando modo AP");
-        enableAPMode(true);
+        logger.warn("SSID vacío: el ESP32 solo quedará en su red propia %s", apSSID);
         return;
     }
 
     logger.info("Conectando a WiFi: %s", ssid);
+    staAttempted = true;
     WiFi.begin(ssid, password);
-
-    unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
-        delay(500);
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-        logger.info("WiFi conectado: %s (RSSI: %d)", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-        apMode = false;
-    } else {
-        logger.error("Fallo conexión WiFi");
-        if (fallbackAP) {
-            enableAPMode(true);
-        }
-    }
+    lastReconnectAttempt = millis();
+    reconnectInterval = 5000;
 }
 
 void WiFiManager::loop() {
-    if (WiFi.status() != WL_CONNECTED && !apMode) {
-        if (millis() - lastReconnectAttempt >= reconnectInterval) {
-            lastReconnectAttempt = millis();
-            logger.info("Reintentando conexión WiFi...");
-            WiFi.reconnect();
-        }
+    if (!staEnabled || !staAttempted) return;
+
+    if (WiFi.status() == WL_CONNECTED) {
+        reconnectInterval = 5000;
+        return;
+    }
+
+    // Reintento con backoff (nunca bloquea el loop principal)
+    if (millis() - lastReconnectAttempt >= reconnectInterval) {
+        lastReconnectAttempt = millis();
+        logger.info("Reintentando conexión WiFi a %s...", ssid);
+        WiFi.reconnect();
+        reconnectInterval = reconnectInterval < 30000 ? reconnectInterval * 2 : 30000;
     }
 }
 
 bool WiFiManager::isConnected() {
-    return WiFi.status() == WL_CONNECTED && !apMode;
+    return staEnabled && WiFi.status() == WL_CONNECTED;
+}
+
+bool WiFiManager::isApActive() {
+    return apActive;
 }
 
 String WiFiManager::getIP() {
-    return WiFi.localIP().toString();
+    if (isConnected()) return WiFi.localIP().toString();
+    if (apActive) return WiFi.softAPIP().toString();
+    return "0.0.0.0";
+}
+
+String WiFiManager::getApIP() {
+    if (!apActive) return "";
+    return WiFi.softAPIP().toString();
+}
+
+String WiFiManager::getApSSID() {
+    if (!apActive) return "";
+    return String(apSSID);
+}
+
+String WiFiManager::getMode() {
+    if (apActive && isConnected()) return "AP+STA";
+    if (apActive) return "AP";
+    if (isConnected()) return "STA";
+    return "OFF";
 }
 
 String WiFiManager::getMAC() {
@@ -69,6 +111,7 @@ String WiFiManager::getMAC() {
 }
 
 int WiFiManager::getRSSI() {
+    if (!isConnected()) return 0;
     return WiFi.RSSI();
 }
 
@@ -78,13 +121,14 @@ void WiFiManager::setCredentials(const char* s, const char* pass) {
 }
 
 void WiFiManager::enableAPMode(bool enable) {
-    if (enable && !apMode) {
+    if (enable == apActive) return;
+    if (enable) {
         WiFi.mode(WIFI_AP_STA);
         WiFi.softAP(apSSID, apPassword);
+        apActive = true;
         logger.info("Modo AP activado: %s (%s)", apSSID, WiFi.softAPIP().toString().c_str());
-        apMode = true;
-    } else if (!enable && apMode) {
+    } else {
         WiFi.mode(WIFI_STA);
-        apMode = false;
+        apActive = false;
     }
 }

@@ -24,9 +24,21 @@ Opcionales (montaje en caja): caja IP65, bornes 2P+3P, fusible 2A, LEDs/botón.
 - Nada más: los instaladores `.msi` / `.exe` traen todo incluido
 
 ### Software (solo desarrollo)
-- Node.js 18+, npm 9+
-- Rust + Visual Studio Build Tools (para compilar el backend Tauri)
-- PlatformIO (para el firmware)
+
+Instalar en este orden (PowerShell, usuario sin administrador salvo Build Tools):
+
+| # | Programa | Para qué | Comando |
+|---|----------|----------|---------|
+| 1 | Git | clonar la repo | `winget install Git.Git` |
+| 2 | Node.js 18+ (trae npm) | app React / app de escritorio | `winget install OpenJS.NodeJS.LTS` |
+| 3 | **Python 3.11+** | PlatformIO se instala con pip | `winget install Python.Python.3.11` |
+| 4 | Rust (rustup) | backend Tauri | `winget install Rustlang.Rust.GNU` |
+| 5 | VS 2022 Build Tools (C++) | enlazar el Rust | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.NativeDesktop --quiet"` |
+| 6 | PlatformIO | firmware ESP32 | `pip install platformio` |
+
+- **Java no hace falta** (es del Arduino IDE clásico).
+- **No hace falta** ESP-IDF ni Android Studio.
+- ~6 GB de espacio libre. El instalador `.msi`/`.exe` de la app **no** necesita nada de esto.
 
 ---
 
@@ -76,8 +88,8 @@ TIMBRE ESCOLAR             RELÉ
 ### 3.1 Aplicación de escritorio (usuario final) — SIN comandos
 
 1. Buscar el instalador:
-   `app\src-tauri\target\release\bundle\msi\Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi`
-   (alternativa: `bundle\nsis\Timbre Escolar Inteligente_1.0.0_x64-setup.exe`)
+   `app\src-tauri\target\release\bundle\msi\Timbre Escolar Inteligente_1.0.1_x64_es-ES.msi`
+   (alternativa: `bundle\nsis\Timbre Escolar Inteligente_1.0.1_x64-setup.exe`)
 2. **Doble click → Sí (UAC) → Listo**
 3. Abrir **Timbre Escolar Inteligente** desde el Menú Inicio
 4. Login: `admin@colegio.edu` / `admin123`
@@ -119,11 +131,18 @@ pio run -e esp32dev-ota --target upload
 
 ### 3.4 Configuración `config.h`
 ```cpp
+// WiFi del colegio (editar esto antes de subir el firmware)
 #define WIFI_SSID "MI_COLEGIO_WIFI"
 #define WIFI_PASSWORD "password_del_colegio"
-#define WIFI_FALLBACK_AP true
+#define WIFI_STA_ENABLED true      // unirse a la red del colegio
+#define WIFI_AP_ALWAYS_ON true     // su propia red SIEMPRE encendida
+#define WIFI_AP_MAX_CLIENTS 4
 #define AP_SSID "TimbreEscolar-Setup"
-#define AP_PASSWORD "Timbre#Escolar2026"   // contraseña del punto de respaldo
+#define AP_PASSWORD "Timbre#Escolar2026"
+
+// Historial que guarda el propio ESP32 (sobrevive apagones)
+#define HISTORY_FILE "/history.json"
+#define HISTORY_MAX_EVENTS 150
 
 #define NTP_SERVER_1 "pool.ntp.org"
 #define NTP_SERVER_2 "time.google.com"
@@ -135,8 +154,12 @@ pio run -e esp32dev-ota --target upload
 ```
 
 > **Decisión de diseño:** la red WiFi se cambia **editando `config.h` y re-subiendo el
-> firmware**. El modo AP (`TimbreEscolar-Setup` / `Timbre#Escolar2026`) existe solo como
-> red de respaldo para llegar al dispositivo, **no tiene portal de configuración web**.
+> firmware** (no hay portal web de configuración). El ESP32 **siempre** enciende su red
+> propia `TimbreEscolar-Setup` (`192.168.4.1`) además de unirse a la del colegio, así la
+> app llega por cualquiera de las dos.
+>
+> ⚠️ Las credenciales de arriba son de prueba: cámbialas antes de operar y no las subas a
+> repositorios públicos.
 
 ---
 
@@ -148,13 +171,30 @@ pio run -e esp32dev-ota --target upload
 3. Abrir la app **Timbre Escolar Inteligente** (Menú Inicio)
 
 ### 4.2 Conectar la app con el timbre
-1. En la app: **Ajustes → WebSocket**
-2. URL del dispositivo: `ws://<IP_DEL_ESP32>:81` (si está en modo AP:
-   `ws://192.168.4.1:81`)
-3. Token: `timbre-escolar-2024`
-4. Guardar → el indicador del encabezado debe decir **Conectado**
+1. Abrir la app → login (`admin@colegio.edu` / `admin123`)
+2. La app **busca sola** al ESP32: `TimbreEscolar.local` → `192.168.4.1` → `localhost:81`
+3. El indicador del encabezado debe decir **Conectado** (muestra la URL usada)
+4. Si no encuentra: **Dispositivo → Buscar timbre** (o Ajustes → Red → Buscar timbre)
+5. Token: `timbre-escolar-2024` (Ajustes → Red, solo si lo cambias)
 
-### 4.3 Configuración Inicial
+Al conectar, la app baja el **historial guardado en el ESP32** y muestra
+"Historial importado: N eventos nuevos". Los timbres sonados con la app cerrada
+aparecen automáticamente.
+
+### 4.3 Control desde el celular
+1. En la PC (con la misma WiFi/ala que el celular):
+   ```bash
+   npm run build     # genera app/dist
+   npm run serve     # imprime http://<IP-de-la-PC>:4173
+   ```
+2. Abrir esa URL en el navegador del celular
+3. Si Windows lo bloquea, ejecutar (PowerShell admin):
+   ```powershell
+   netsh advfirewall firewall add rule name="Timbre Escolar app" dir=in action=allow protocol=TCP localport=4173
+   ```
+4. La PC debe quedarse encendida (o en "nunca dormir", ver §3.2)
+
+### 4.4 Configuración Inicial
 1. **Jornadas**: Matutina y Vespertina
 2. **Horarios**: eventos (Entrada, Períodos, Recreos, Salida) con drag & drop
 3. **Calendario**: excepciones (feriados, días cortos, sin clases)

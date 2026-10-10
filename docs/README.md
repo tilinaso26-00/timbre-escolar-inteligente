@@ -23,7 +23,7 @@
 ## Inicio Rápido
 
 ### Usuario final (sin comandos)
-1. Doble click en `app/src-tauri/target/release/bundle/msi/Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi`
+1. Doble click en `app/src-tauri/target/release/bundle/msi/Timbre Escolar Inteligente_1.0.1_x64_es-ES.msi`
 2. Aceptar UAC → abrir **Timbre Escolar Inteligente** desde el Menú Inicio
 3. Login: `admin@colegio.edu` / `admin123`
 

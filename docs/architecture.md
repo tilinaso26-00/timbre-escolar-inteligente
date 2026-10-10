@@ -67,6 +67,8 @@ Sistema completo de automatización de timbres escolares compuesto por:
 | **Shell (Tauri)** | Rust (tauri 2) | Ventana única, cerrar = ocultar, bandeja (tray) con Salir, arranque con Windows, guardado de tamaño/posición, logs en disco |
 | **Core/Schedule-Engine** | TypeScript (puro) | Lógica de horarios, cálculo de períodos, validación, prioridades |
 | **Core/Storage** | IndexedDB (Dexie) | Persistencia local: jornadas, plantillas, excepciones, eventos, config (con poda automática de historial) |
+| **Core/History-Import** | TypeScript (puro) | Importa el historial guardado en el ESP32 con clave estable `deviceId|timestamp|evento|origen` (nunca duplica) |
+| **Shared/UseWebSocket** | TypeScript | Puente WS: descubrimiento (`TimbreEscolar.local` → `192.168.4.1` → `localhost:81`), reintento con backoff, hora, importación de historial |
 | **Features/Dashboard** | React + Tailwind | Vista principal: estado, próximo timbre, cuenta regresiva, timbre manual |
 | **Features/Schedules** | React + @hello-pangea/dnd | Editor visual drag-drop, ajustes ±5/10/15min, vista previa |
 | **Features/Calendar** | React + react-day-picker | Vista mensual, excepciones por fecha, prioridades |
@@ -81,10 +83,12 @@ Sistema completo de automatización de timbres escolares compuesto por:
 |--------|----------|-----------------|
 | **TimeManager** | `time/TimeManager.h/cpp` | NTP + hora persistida en NVS (sobrevive apagones), zona horaria Guatemala (UTC-6). Soporte opcional DS3231 si se conecta |
 | **ScheduleStore** | `schedule/ScheduleStore.h/cpp` | LittleFS: horarios, plantillas, excepciones en memoria |
-| **Scheduler** | `schedule/Scheduler.h/cpp` | Ejecución minuto a minuto, evalúa excepciones con prioridades |
-| **WiFiManager** | `network/WiFiManager.h/cpp` | STA + AP fallback, reconexión automática |
-| **WebServer** | `network/WebServer.h/cpp` | REST API: /api/status, /api/schedule, /api/bell/* |
-| **WebSocketServer** | `network/WebSocketServer.h/cpp` | Tiempo real: sync, bell:manual, bell:test, heartbeat |
+| **HistoryLog** | `schedule/HistoryLog.h/cpp` | Historial propio del ESP32 (`/history.json`, últimos 150 eventos), escritura atómica (tmp+rename) |
+| **Scheduler** | `schedule/Scheduler.h/cpp` | Ejecución minuto a minuto, evalúa excepciones con prioridades; `notifyBellExecuted` registra en HistoryLog |
+| **WiFiManager** | `network/WiFiManager.h/cpp` | `WIFI_AP_STA`: red propia SIEMPRE + unión al colegio sin bloquear, reintento con backoff 5→30 s |
+| **WebServer** | `network/WebServer.h/cpp` | REST API: /api/status, /api/schedule, /api/bell/*, /api/history |
+| **WebSocketServer** | `network/WebSocketServer.h/cpp` | Tiempo real: sync, bell:*, time:sync, history:request, heartbeat |
+| **Logger** | `utils/Logger.h/cpp` | Serial + archivo en LittleFS (`/logs/timbre.log`, solo WARN/ERROR, rota a 32 KB) |
 | **SyncProtocol** | `sync/SyncProtocol.h/cpp` | Parseo atómico, versionado, hash, validación |
 | **StateManager** | `sync/StateManager.h/cpp` | Metadatos sync, versionado, config dispositivo |
 | **RelayControl** | `hardware/RelayControl.h/cpp` | Control relé con safety timeout, active low/high |
@@ -188,34 +192,39 @@ BellEventLog {
 { "event": "bell:manual", "data": { "durationSec": 3 }, "token": "..." }
 { "event": "bell:test", "data": { "durationSec": 3 }, "token": "..." }
 { "event": "config:update", "data": { ... }, "token": "..." }
-{ "event": "time:sync", "token": "..." }
+{ "event": "time:sync", "data": { "timestamp": "2026-10-08T07:30:00" }, "token": "..." }
+{ "event": "history:request", "data": { "offset": 0, "limit": 25 }, "token": "..." }
 ```
 
 **ESP32 → App:**
 ```json
-{ "event": "status", "data": { "connected": true, "wifi": true, "lastSync": 1234567890, "deviceTime": "12:34:56", "nextEvent": "Recreo a 09:30 (en 18 min)", "lastBell": "09:15", "scheduledCount": 12, "relayState": false } }
+{ "event": "status", "data": { "connected": true, "wifi": true, "deviceTime": "12:34:56", "nextEvent": "...", "lastBell": "09:15", "scheduledCount": 12, "relayState": false, "mode": "AP+STA", "apSSID": "TimbreEscolar-Setup", "apIP": "192.168.4.1", "ip": "192.168.1.50", "rssi": -45, "historyCount": 37, "uptime": 123456, "freeHeap": 143000 } }
 { "event": "sync:complete", "data": { "version": 1234567890, "hash": "A1B2C3D4" } }
 { "event": "sync:error", "data": "Error message" }
-{ "event": "time:sync", "data": { ... } }
-{ "event": "bell:executed", "data": { "eventName": "Recreo", "timestamp": "09:30:00" } }
+{ "event": "time:sync", "data": { "applied": true, "deviceTime": "...", "date": "...", "valid": true } }
+{ "event": "history:events", "data": { "offset": 0, "total": 37, "items": [ { "timestamp": "2026-10-08T07:00:00", "eventName": "Entrada", "type": "entrada", "journey": "matutina", "origin": "automatic", "durationSec": 3, "executed": true, "deviceId": "TimbreEscolar", "firmwareVersion": "1.1.0" } ], "done": false } }
+{ "event": "bell:executed", "data": { "eventName": "Recreo", "timestamp": "2026-10-08T09:30:00", "triggeredBy": "automatic" } }
 { "event": "error", "code": "SYNC_FAILED", "message": "..." }
 ```
 
-> Los eventos `demo:start` / `demo:stop` / `demo:trigger` son **internos de la app y del
-> simulador** (`npm run mock`); el firmware real no los conoce.
+> El historial se transmite en **bloques de 25** (`history:request` → `history:events`);
+> la app repite hasta `done: true` y luego importa todo con dedup local.
+> Los eventos `demo:*` son **internos de la app y del simulador** (`npm run mock`);
+> el firmware real no los conoce.
 
 ### 5.2 REST API (Puerto 80)
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/status` | Estado dispositivo, IP, RSSI, uptime, heap |
+| GET | `/api/status` | Estado dispositivo, modo red, IP, RSSI, uptime, heap, historial |
 | GET | `/api/schedule` | Horarios + plantillas + excepciones + metadatos sync |
 | POST | `/api/schedule` | Sync completo (SyncPayload) |
 | GET | `/api/config` | Config dispositivo |
 | POST | `/api/config` | Actualizar config |
-| POST | `/api/bell/manual` | `{ "durationSec": 3 }` |
+| POST | `/api/bell/manual` | `{ "durationSec": 3 }` (queda registrado en el historial) |
 | POST | `/api/bell/test` | `{ "durationSec": 3 }` |
-| GET | `/api/logs` | Historial (desde LittleFS) |
+| GET | `/api/history` | Historial guardado en LittleFS (más reciente primero) |
+| GET | `/api/logs` | Alias de `/api/history` |
 | POST | `/api/reboot` | Reiniciar ESP32 |
 | POST | `/api/factory-reset` | Formatear LittleFS + reiniciar |
 
@@ -277,7 +286,7 @@ ESP32 (3.3V)          MÓDULO RELÉ (5V)           TIMBRE (120/220V)
 ### 8.1 Aplicación de escritorio (usuario final)
 ```bash
 # Doble click en el instalador generado:
-#   app/src-tauri/target/release/bundle/msi/Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi
+#   app/src-tauri/target/release/bundle/msi/Timbre Escolar Inteligente_1.0.1_x64_es-ES.msi
 # o bundle/nsis/..._x64-setup.exe
 # Sin comandos: instala acceso en Menú Inicio + arranque con Windows + logs.
 ```

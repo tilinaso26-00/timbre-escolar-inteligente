@@ -3,6 +3,7 @@
 #include "time/TimeManager.h"
 #include "schedule/ScheduleStore.h"
 #include "schedule/Scheduler.h"
+#include "schedule/HistoryLog.h"
 #include "network/WiFiManager.h"
 #include "network/WebServer.h"
 #include "network/WebSocketServer.h"
@@ -16,6 +17,7 @@
 TimeManager timeManager;
 ScheduleStore scheduleStore;
 Scheduler scheduler;
+HistoryLog historyLog;
 WiFiManager wifiManager;
 WebServerWrapper webServer;
 WebSocketServerWrapper wsServer;
@@ -46,9 +48,13 @@ void setup() {
     watchdog.init(WDT_TIMEOUT_MS, LOOP_WATCHDOG_MS);
 
     scheduleStore.init();
+    logger.initFileSink();   // WARN/ERROR del sistema en LittleFS
     timeManager.init(NTP_SERVER_1, NTP_SERVER_2, NTP_SYNC_INTERVAL_MS, TIMEZONE_OFFSET);
+    historyLog.init(&timeManager);   // historial propio (sobrevive apagones)
 
-    wifiManager.init(WIFI_SSID, WIFI_PASSWORD, WIFI_FALLBACK_AP, AP_SSID, AP_PASSWORD);
+    // AP propio SIEMPRE encendido + unión a la red del colegio
+    wifiManager.init(WIFI_SSID, WIFI_PASSWORD, WIFI_STA_ENABLED, WIFI_AP_ALWAYS_ON,
+                     AP_SSID, AP_PASSWORD, WIFI_AP_MAX_CLIENTS);
     wifiManager.connect();
 
     mdns.init(DEVICE_NAME);
@@ -56,10 +62,11 @@ void setup() {
     wsServer.init(WS_PORT);
 
     scheduler.init(&scheduleStore, &timeManager, &relay, &logger);
+    scheduler.setHistoryLog(&historyLog);
     stateManager.init(&scheduleStore, &timeManager, &wifiManager, &logger);
 
-    webServer.setDependencies(&scheduleStore, &timeManager, &wifiManager, &relay, &logger, &stateManager);
-    wsServer.setDependencies(&scheduleStore, &timeManager, &wifiManager, &relay, &logger, &stateManager, &scheduler);
+    webServer.setDependencies(&scheduleStore, &timeManager, &wifiManager, &relay, &logger, &stateManager, &historyLog);
+    wsServer.setDependencies(&scheduleStore, &timeManager, &wifiManager, &relay, &logger, &stateManager, &scheduler, &historyLog);
 
     // Los timbres ejecutados se publican a la aplicación (evento bell:executed)
     scheduler.setBellNotifier([](const String& payload) { wsServer.broadcast(payload); });
@@ -93,7 +100,7 @@ void loop() {
 }
 
 void broadcastStatus() {
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<1024> doc;
     doc["event"] = "status";
     doc["data"]["connected"] = wifiManager.isConnected();
     doc["data"]["wifi"] = wifiManager.isConnected();
@@ -104,6 +111,12 @@ void broadcastStatus() {
     doc["data"]["lastEvent"] = scheduler.getLastExecutedEvent();
     doc["data"]["scheduledCount"] = scheduleStore.getEventCount();
     doc["data"]["relayState"] = relay.getState();
+    doc["data"]["mode"] = wifiManager.getMode();
+    doc["data"]["apSSID"] = wifiManager.getApSSID();
+    doc["data"]["apIP"] = wifiManager.getApIP();
+    doc["data"]["staConnected"] = wifiManager.isConnected();
+    doc["data"]["ip"] = wifiManager.getIP();
+    doc["data"]["historyCount"] = historyLog.count();
 
     String output;
     serializeJson(doc, output);

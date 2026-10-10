@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "mock": "node scripts/mock-esp32.mjs"
+    "mock": "node scripts/mock-esp32.mjs",
+    "serve": "node scripts/serve-app.mjs",
+    "build": "npm --prefix app run build",
+    "dev": "npm --prefix app run dev"
   }
 }

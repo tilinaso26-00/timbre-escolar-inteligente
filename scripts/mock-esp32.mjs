@@ -65,8 +65,44 @@ function buildStatus() {
     lastEvent: lastBellEvent || '',
     scheduledCount,
     relayState: relayOn,
+    mode: 'AP+STA',
+    apSSID: 'TimbreEscolar-Setup',
+    apIP: '192.168.4.1',
+    ip: '192.168.1.100',
+    rssi: -45,
+    staConnected: true,
+    historyCount: mockHistory.length,
+    uptime: Math.round(process.uptime() * 1000),
+    freeHeap: 143000,
   };
 }
+
+// Historial que "guarda" el mock (para probar la importación en la app)
+const today = new Date().toISOString().slice(0, 10);
+const mockHistory = [
+  {
+    timestamp: `${today}T07:00:00`,
+    eventName: 'Entrada',
+    type: 'entrada',
+    journey: 'matutina',
+    origin: 'automatic',
+    durationSec: 3,
+    executed: true,
+    deviceId: DEVICE_ID,
+    firmwareVersion: FIRMWARE_VERSION,
+  },
+  {
+    timestamp: `${today}T07:05:00`,
+    eventName: 'Primera hora',
+    type: 'cambio_periodo',
+    journey: 'matutina',
+    origin: 'automatic',
+    durationSec: 3,
+    executed: true,
+    deviceId: DEVICE_ID,
+    firmwareVersion: FIRMWARE_VERSION,
+  },
+];
 
 let lastBellTime = '--:--';
 let lastBellEvent = '';
@@ -195,6 +231,18 @@ wss.on('connection', socket => {
           triggeredBy: 'demo',
         });
         break;
+      case 'history:request': {
+        const offset = Number(data.offset || 0);
+        const limit = Number(data.limit || 25);
+        const items = mockHistory.slice(offset, offset + limit);
+        send(socket, 'history:events', {
+          offset,
+          total: mockHistory.length,
+          items,
+          done: offset + items.length >= mockHistory.length,
+        });
+        break;
+      }
       case 'config:update':
         console.log('[mock] config actualizada');
         send(socket, 'config:applied', { ok: true });

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useToast } from '@shared/ui/Toast';
-import { eventsRepo } from '@core/storage';
-import type { BellEventLog, EventType, JourneyType } from '@core/schedule-engine';
+import { eventsRepo, importDeviceHistory, normalizeBellEvent } from '@core/storage';
+import type { BellEventLog } from '@core/schedule-engine';
 
 export interface DeviceStatus {
   connected: boolean;
@@ -16,12 +16,22 @@ export interface DeviceStatus {
   lastBell: string | null;
   scheduledCount: number;
   relayState: boolean;
+  mode?: string;
+  apSSID?: string;
+  apIP?: string;
+  ip?: string;
+  rssi?: number;
+  staConnected?: boolean;
+  historyCount?: number;
+  uptime?: number;
+  freeHeap?: number;
 }
 
 export interface UseWebSocketReturn {
   socket: WebSocket | null;
   connected: boolean;
   deviceStatus: DeviceStatus | null;
+  endpoint: string;
   sendMessage: (event: string, data?: Record<string, unknown>) => void;
   reconnect: () => void;
 }
@@ -35,16 +45,51 @@ export interface WSNotification {
 const AUTH_TOKEN = 'timbre-escolar-2024';
 const DEFAULT_WS_URL = 'ws://localhost:81';
 const WS_URL_STORAGE_KEY = 'timbre.wsUrl';
+const WS_URL_AUTO_KEY = 'timbre.wsUrlAuto';
 const WS_TOKEN_STORAGE_KEY = 'timbre.wsToken';
 
-export function resolveWsUrl(): string {
+// Orden en que la app busca el timbre:
+// 1) nombre mDNS (funciona con cualquier IP)  2) red propia del ESP32  3) PC local
+const DISCOVERY_CANDIDATES = [
+  'ws://TimbreEscolar.local:81',
+  'ws://192.168.4.1:81',
+  DEFAULT_WS_URL,
+];
+const CONNECT_TIMEOUT_MS = 2500;
+const HISTORY_CHUNK_SIZE = 25;
+const HISTORY_MAX_CHUNKS = 20;
+
+function storedWsUrl(): string | null {
   try {
     const stored = localStorage.getItem(WS_URL_STORAGE_KEY);
     if (stored) return stored;
   } catch {
     /* localStorage no disponible */
   }
-  return (import.meta.env.VITE_WS_URL as string | undefined) || DEFAULT_WS_URL;
+  const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
+  return envUrl || null;
+}
+
+function buildCandidates(): string[] {
+  const manual = storedWsUrl();
+  if (manual) return [manual];
+
+  const ordered: string[] = [];
+  try {
+    const auto = localStorage.getItem(WS_URL_AUTO_KEY);
+    if (auto) ordered.push(auto);
+  } catch {
+    /* localStorage no disponible */
+  }
+  for (const candidate of DISCOVERY_CANDIDATES) {
+    if (!ordered.includes(candidate)) ordered.push(candidate);
+  }
+  return ordered;
+}
+
+export function resolveWsUrl(): string {
+  const candidates = buildCandidates();
+  return candidates[0] || DEFAULT_WS_URL;
 }
 
 export function resolveWsToken(): string {
@@ -69,17 +114,8 @@ function notifyToast(notification: WSNotification): void {
 interface BridgeState {
   connected: boolean;
   deviceStatus: DeviceStatus | null;
+  endpoint: string;
 }
-
-const EVENT_TYPES: EventType[] = [
-  'entrada',
-  'salida',
-  'cambio_periodo',
-  'recreo_inicio',
-  'recreo_fin',
-  'actividad_especial',
-  'manual',
-];
 
 function pad(n: number): string {
   return n.toString().padStart(2, '0');
@@ -127,6 +163,16 @@ function normalizeStatus(data: Record<string, unknown>): DeviceStatus {
     lastBell: typeof data.lastBell === 'string' ? data.lastBell : null,
     scheduledCount: typeof data.scheduledCount === 'number' ? data.scheduledCount : 0,
     relayState: Boolean(data.relayState),
+    mode: typeof data.mode === 'string' ? data.mode : undefined,
+    apSSID: typeof data.apSSID === 'string' ? data.apSSID : undefined,
+    apIP: typeof data.apIP === 'string' ? data.apIP : undefined,
+    ip: typeof data.ip === 'string' ? data.ip : undefined,
+    rssi: typeof data.rssi === 'number' ? data.rssi : undefined,
+    staConnected:
+      typeof data.staConnected === 'boolean' ? data.staConnected : Boolean(data.wifi),
+    historyCount: typeof data.historyCount === 'number' ? data.historyCount : undefined,
+    uptime: typeof data.uptime === 'number' ? data.uptime : undefined,
+    freeHeap: typeof data.freeHeap === 'number' ? data.freeHeap : undefined,
   };
 }
 
@@ -138,38 +184,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 async function persistBellEvent(data: Record<string, unknown>): Promise<void> {
   try {
-    const timestamp =
-      typeof data.timestamp === 'string' && data.timestamp ? data.timestamp : new Date().toISOString();
-    const eventTypeRaw = typeof data.eventType === 'string' ? data.eventType : '';
-    const eventType = (EVENT_TYPES as string[]).includes(eventTypeRaw)
-      ? (eventTypeRaw as EventType)
-      : 'cambio_periodo';
-    const journey: JourneyType = data.journey === 'vespertina' ? 'vespertina' : 'matutina';
-    const triggeredByRaw = typeof data.triggeredBy === 'string' ? data.triggeredBy : '';
-    const triggeredBy: BellEventLog['triggeredBy'] =
-      triggeredByRaw === 'manual' || triggeredByRaw === 'demo' || triggeredByRaw === 'test'
-        ? triggeredByRaw
-        : 'automatic';
-    const duration = Number(data.durationSeconds ?? data.durationSec ?? 3);
-
-    const log: BellEventLog = {
-      id: `${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
-      timestamp,
-      eventName: typeof data.eventName === 'string' && data.eventName ? data.eventName : 'Timbre',
-      eventType,
-      journey,
-      triggeredBy,
-      executed: data.executed === undefined ? true : Boolean(data.executed),
-      actualBellTime:
-        typeof data.actualBellTime === 'string' ? data.actualBellTime : undefined,
-      durationSeconds: Number.isFinite(duration) && duration > 0 ? duration : 3,
-      deviceId: typeof data.deviceId === 'string' && data.deviceId ? data.deviceId : 'ESP32',
-      firmwareVersion:
-        typeof data.firmwareVersion === 'string' && data.firmwareVersion
-          ? data.firmwareVersion
-          : '1.0.0',
-    };
-
+    const log: BellEventLog = normalizeBellEvent(data);
     await eventsRepo.put(log);
   } catch (error) {
     console.error('Error guardando evento de timbre:', error);
@@ -193,12 +208,18 @@ interface Bridge {
 
 function createBridge(): Bridge {
   let ws: WebSocket | null = null;
-  let url = resolveWsUrl();
+  let candidates = buildCandidates();
+  let candidateIdx = 0;
+  let url = candidates[0] || DEFAULT_WS_URL;
   let attempts = 0;
   let retryTimer: number | null = null;
+  let connectTimer: number | null = null;
   let timeSyncTimer: number | null = null;
+  let historyBuffer: unknown[] = [];
+  let historyOffset = 0;
+  let historyChunks = 0;
   const listeners = new Set<Listener>();
-  const state: BridgeState = { connected: false, deviceStatus: null };
+  const state: BridgeState = { connected: false, deviceStatus: null, endpoint: url };
 
   const emit = (): void => {
     const snapshot: BridgeState = { ...state };
@@ -216,8 +237,34 @@ function createBridge(): Bridge {
     }
   };
 
+  const clearConnectTimer = (): void => {
+    if (connectTimer !== null) {
+      window.clearTimeout(connectTimer);
+      connectTimer = null;
+    }
+  };
+
+  const resetCandidates = (): void => {
+    candidates = buildCandidates();
+    candidateIdx = 0;
+    url = candidates[0] || DEFAULT_WS_URL;
+    state.endpoint = url;
+  };
+
+  // Devuelve true si queda otro sitio por probar (mDNS -> red propia -> PC)
+  const advanceCandidate = (): boolean => {
+    if (candidateIdx < candidates.length - 1) {
+      candidateIdx += 1;
+      url = candidates[candidateIdx];
+      state.endpoint = url;
+      return true;
+    }
+    return false;
+  };
+
   const scheduleRetry = (): void => {
     if (retryTimer !== null || listeners.size === 0) return;
+    resetCandidates();
     const delay = Math.min(1000 * 2 ** attempts, 30000);
     attempts += 1;
     retryTimer = window.setTimeout(() => {
@@ -260,6 +307,49 @@ function createBridge(): Bridge {
     timeSyncTimer = window.setInterval(sendTimeSync, 5 * 60 * 1000);
   };
 
+  // --- Historial guardado en el ESP32 (se baja en chunks de 25) ---
+  const requestHistory = (): void => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    historyChunks += 1;
+    ws.send(
+      JSON.stringify({
+        event: 'history:request',
+        data: { offset: historyOffset, limit: HISTORY_CHUNK_SIZE },
+        token: resolveWsToken(),
+      }),
+    );
+  };
+
+  const startHistoryImport = (): void => {
+    historyBuffer = [];
+    historyOffset = 0;
+    historyChunks = 0;
+    requestHistory();
+  };
+
+  const finishHistoryImport = async (): Promise<void> => {
+    const items = historyBuffer;
+    historyBuffer = [];
+    if (items.length === 0) return;
+    try {
+      const { received, added } = await importDeviceHistory(items);
+      if (added > 0) {
+        notify({
+          type: 'success',
+          title: 'Historial importado',
+          message: `${added} evento${added === 1 ? '' : 's'} nuevo${added === 1 ? '' : 's'} del timbre (de ${received})`,
+        });
+      }
+    } catch (error) {
+      console.error('Error importando historial del dispositivo:', error);
+      notify({
+        type: 'error',
+        title: 'No se pudo importar el historial',
+        message: 'El historial del timbre no se pudo copiar a esta PC.',
+      });
+    }
+  };
+
   const handleMessage = (event: MessageEvent): void => {
     let payload: unknown;
     try {
@@ -298,6 +388,17 @@ function createBridge(): Bridge {
           message: typeof data.eventName === 'string' ? data.eventName : undefined,
         });
         break;
+      case 'history:events': {
+        const items = Array.isArray(data.items) ? (data.items as unknown[]) : [];
+        const total = typeof data.total === 'number' ? data.total : 0;
+        historyBuffer.push(...items);
+        historyOffset += items.length;
+        const hasMore =
+          items.length > 0 && historyOffset < total && historyChunks < HISTORY_MAX_CHUNKS;
+        if (hasMore) requestHistory();
+        else void finishHistoryImport();
+        break;
+      }
       case 'error':
         notify({
           type: 'error',
@@ -315,41 +416,95 @@ function createBridge(): Bridge {
     }
   };
 
+  const closeCurrent = (): void => {
+    clearConnectTimer();
+    const socket = ws;
+    ws = null;
+    if (socket) {
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      try {
+        socket.close();
+      } catch {
+        /* noop */
+      }
+    }
+  };
+
   const open = (): void => {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
     clearRetry();
+    clearConnectTimer();
+    state.endpoint = url;
     try {
       ws = new WebSocket(url);
     } catch {
-      scheduleRetry();
+      if (advanceCandidate()) open();
+      else scheduleRetry();
       return;
     }
 
-    ws.onopen = () => {
+    const socket = ws;
+
+    // Si en 2.5 s no abre, lo descartamos y probamos el siguiente candidato
+    connectTimer = window.setTimeout(() => {
+      connectTimer = null;
+      if (ws === socket && socket.readyState === WebSocket.CONNECTING) {
+        try {
+          socket.close();
+        } catch {
+          /* noop */
+        }
+      }
+    }, CONNECT_TIMEOUT_MS);
+
+    socket.onopen = () => {
+      clearConnectTimer();
       attempts = 0;
       state.connected = true;
+      state.endpoint = url;
+      if (!storedWsUrl()) {
+        try {
+          localStorage.setItem(WS_URL_AUTO_KEY, url);
+        } catch {
+          /* localStorage no disponible */
+        }
+      }
       emit();
-      notify({ type: 'success', title: 'Dispositivo conectado' });
+      notify({
+        type: 'success',
+        title: 'Dispositivo conectado',
+        message: url,
+      });
       startTimeSync();
+      startHistoryImport();
     };
 
-    ws.onmessage = handleMessage;
+    socket.onmessage = handleMessage;
 
-    ws.onclose = () => {
+    socket.onclose = () => {
+      clearConnectTimer();
       const wasConnected = state.connected;
-      ws = null;
+      if (ws === socket) ws = null;
       state.connected = false;
       emit();
       stopTimeSync();
+
       if (wasConnected) {
         notify({ type: 'warning', title: 'Dispositivo desconectado' });
+        scheduleRetry();
+      } else if (advanceCandidate()) {
+        open();
+      } else {
+        scheduleRetry();
       }
-      scheduleRetry();
     };
 
-    ws.onerror = () => {
+    socket.onerror = () => {
       /* onclose se encarga de reconectar */
     };
   };
@@ -357,12 +512,14 @@ function createBridge(): Bridge {
   return {
     start: (nextUrl?: string) => {
       if (nextUrl && nextUrl !== url) {
+        closeCurrent();
+        candidates = [nextUrl];
+        candidateIdx = 0;
         url = nextUrl;
         clearRetry();
-        ws?.close();
-        ws = null;
         state.connected = false;
         state.deviceStatus = null;
+        state.endpoint = url;
         emit();
       }
       open();
@@ -371,7 +528,10 @@ function createBridge(): Bridge {
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
-        if (listeners.size === 0) clearRetry();
+        if (listeners.size === 0) {
+          clearRetry();
+          clearConnectTimer();
+        }
       };
     },
     registerNotifier: nextNotifier => {
@@ -394,10 +554,13 @@ function createBridge(): Bridge {
       return true;
     },
     reconnect: () => {
+      // "Buscar timbre": vuelve a recorrer mDNS -> red propia -> PC local
       attempts = 0;
       clearRetry();
-      ws?.close();
-      ws = null;
+      closeCurrent();
+      resetCandidates();
+      state.connected = false;
+      emit();
       open();
     },
     getState: () => ({ ...state }),
@@ -412,11 +575,16 @@ export function getWsEndpoint(): { url: string; token: string } {
 }
 
 export function configureWsEndpoint(url: string, token: string): void {
-  const previousUrl = resolveWsUrl();
-  const cleanUrl = url.trim() || DEFAULT_WS_URL;
+  const cleanUrl = url.trim();
   const cleanToken = token.trim() || AUTH_TOKEN;
   try {
-    localStorage.setItem(WS_URL_STORAGE_KEY, cleanUrl);
+    if (cleanUrl) {
+      localStorage.setItem(WS_URL_STORAGE_KEY, cleanUrl);
+    } else {
+      // Vacío = volver a autodescubrir el timbre
+      localStorage.removeItem(WS_URL_STORAGE_KEY);
+      localStorage.removeItem(WS_URL_AUTO_KEY);
+    }
   } catch {
     /* localStorage no disponible */
   }
@@ -425,8 +593,7 @@ export function configureWsEndpoint(url: string, token: string): void {
   } catch {
     /* localStorage no disponible */
   }
-  if (cleanUrl === previousUrl) bridge.reconnect();
-  else bridge.start(cleanUrl);
+  bridge.reconnect();
 }
 
 export function useWebSocket(url?: string): UseWebSocketReturn {
@@ -436,6 +603,7 @@ export function useWebSocket(url?: string): UseWebSocketReturn {
     () => bridge.getState().deviceStatus
   );
   const [socket, setSocket] = useState<WebSocket | null>(() => bridge.getSocket());
+  const [endpoint, setEndpoint] = useState<string>(() => bridge.getState().endpoint);
 
   useEffect(() => {
     const unregisterNotifier = bridge.registerNotifier(notification => addToast(notification));
@@ -443,6 +611,7 @@ export function useWebSocket(url?: string): UseWebSocketReturn {
       setConnected(next.connected);
       setDeviceStatus(next.deviceStatus);
       setSocket(bridge.getSocket());
+      setEndpoint(next.endpoint);
     });
     bridge.start(url);
 
@@ -464,6 +633,7 @@ export function useWebSocket(url?: string): UseWebSocketReturn {
     socket,
     connected,
     deviceStatus,
+    endpoint,
     sendMessage,
     reconnect,
   };

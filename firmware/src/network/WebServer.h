@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <WebServer.h>
 #include "schedule/ScheduleStore.h"
+#include "schedule/HistoryLog.h"
 #include "time/TimeManager.h"
 #include "network/WiFiManager.h"
 #include "hardware/RelayControl.h"
@@ -19,12 +20,13 @@ private:
     RelayControl* relay;
     Logger* logger;
     StateManager* stateManager;
+    HistoryLog* historyLog;
 
 public:
     WebServerWrapper();
     void init();
     void loop();
-    void setDependencies(ScheduleStore* ss, TimeManager* tm, WiFiManager* wm, RelayControl* r, Logger* log, StateManager* sm);
+    void setDependencies(ScheduleStore* ss, TimeManager* tm, WiFiManager* wm, RelayControl* r, Logger* log, StateManager* sm, HistoryLog* hl);
 
 private:
     void setupRoutes();
@@ -37,6 +39,7 @@ private:
     void handleManualBell();
     void handleTestBell();
     void handleLogs();
+    void handleHistory();
     void handleReboot();
     void handleFactoryReset();
     void sendJSON(int code, JsonDocument& doc);

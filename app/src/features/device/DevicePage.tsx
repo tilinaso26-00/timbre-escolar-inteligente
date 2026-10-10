@@ -33,7 +33,7 @@ interface DeviceConfig {
 
 export function DevicePage() {
   const { config, deviceStatus, connected, sendMessage, syncToDevice } = useSchedule();
-  const { reconnect } = useWebSocket();
+  const { reconnect, endpoint } = useWebSocket();
   const { addToast } = useToast();
 
   const [showBellTestModal, setShowBellTestModal] = useState(false);
@@ -123,11 +123,18 @@ export function DevicePage() {
       bgColor: connected ? 'bg-green-50' : 'bg-red-50',
     },
     {
-      label: 'WiFi',
+      label: 'WiFi del colegio',
       status: deviceStatus?.wifi ? 'Conectado' : 'Sin señal',
       icon: deviceStatus?.wifi ? Wifi : AlertCircle,
       color: deviceStatus?.wifi ? 'text-green-500' : 'text-red-500',
       bgColor: deviceStatus?.wifi ? 'bg-green-50' : 'bg-red-50',
+    },
+    {
+      label: 'Red propia del timbre',
+      status: deviceStatus?.apSSID ? `Activa (${deviceStatus.apIP || '192.168.4.1'})` : 'Apagada',
+      icon: deviceStatus?.apSSID ? Wifi : AlertCircle,
+      color: deviceStatus?.apSSID ? 'text-green-500' : 'text-red-500',
+      bgColor: deviceStatus?.apSSID ? 'bg-green-50' : 'bg-red-50',
     },
     {
       label: 'Reloj',
@@ -146,14 +153,30 @@ export function DevicePage() {
   ];
 
   const infoRows = [
-    { label: 'ID Dispositivo', value: deviceConfig?.deviceId || deviceStatus?.lastBell || 'ESP32', icon: Shield },
+    { label: 'ID Dispositivo', value: deviceConfig?.deviceId || 'ESP32', icon: Shield },
     { label: 'Nombre', value: deviceConfig?.name || 'TimbreEscolar', icon: Shield },
     { label: 'Versión Firmware', value: deviceConfig?.firmwareVersion || '1.0.0', icon: Cpu },
     { label: 'Última sincronización', value: lastSyncTime, icon: RotateCcw },
-    { label: 'IP / MAC', value: '192.168.1.100 / AA:BB:CC:DD:EE:FF', icon: Wifi },
-    { label: 'Señal WiFi (RSSI)', value: '-45 dBm', icon: Wifi },
-    { label: 'Uptime', value: formatUptime(0), icon: Cpu },
-    { label: 'Memoria libre', value: formatBytes(0), icon: HardDrive },
+    { label: 'Conexión usada', value: endpoint || '—', icon: Wifi },
+    { label: 'IP en la red del colegio', value: deviceStatus?.staConnected ? deviceStatus.ip || '—' : 'Sin unir (la red propia sigue activa)', icon: Wifi },
+    {
+      label: 'Red propia del timbre',
+      value: deviceStatus?.apSSID ? `${deviceStatus.apSSID} (${deviceStatus.apIP || '192.168.4.1'})` : '—',
+      icon: Wifi,
+    },
+    { label: 'Modo WiFi', value: deviceStatus?.mode || '—', icon: Wifi },
+    {
+      label: 'Señal WiFi (RSSI)',
+      value: deviceStatus?.rssi ? `${deviceStatus.rssi} dBm` : 'Sin señal del colegio',
+      icon: Wifi,
+    },
+    { label: 'Uptime', value: deviceStatus?.uptime ? formatUptime(deviceStatus.uptime) : '—', icon: Cpu },
+    { label: 'Memoria libre', value: deviceStatus?.freeHeap ? formatBytes(deviceStatus.freeHeap) : '—', icon: HardDrive },
+    {
+      label: 'Timbres guardados en el ESP32',
+      value: deviceStatus?.historyCount !== undefined ? `${deviceStatus.historyCount} eventos` : '—',
+      icon: Bell,
+    },
   ];
 
   return (
@@ -169,7 +192,7 @@ export function DevicePage() {
             {refreshing ? 'Sincronizando...' : 'Sincronizar'}
           </Button>
           <Button variant="outline" onClick={() => reconnect()}>
-            <RotateCcw className="h-4 w-4 mr-2" /> Reconectar WS
+            <RotateCcw className="h-4 w-4 mr-2" /> Buscar timbre
           </Button>
         </div>
       </div>

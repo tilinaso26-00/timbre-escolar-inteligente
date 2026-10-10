@@ -9,10 +9,16 @@ Repo: https://github.com/tilinaso26-00/timbre-escolar-inteligente (privada)
 
 - **App de escritorio**: doble click, icono en bandeja, arranca con Windows, 24/7
   (el botón X solo oculta; para salir: clic derecho en bandeja → Salir)
+- **Control desde el celular**: `npm run serve` abre la app en `http://<IP-de-la-PC>:4173`
+  desde cualquier teléfono de la red
 - **Interfaz moderna**: React + TypeScript + Tailwind CSS
 - **Horarios dinámicos**: cálculo automático de períodos con ajustes ±5/10/15 min
 - **Calendario académico**: excepciones, días sin clases, plantillas por fecha
-- **Controlador ESP32**: ejecución autónoma, hora en NVS (sobrevive apagones), offline
+- **ESP32 autónomo**: suena solo aunque la PC esté apagada; hora en NVS (sobrevive apagones)
+- **Red propia siempre encendida**: el ESP32 enciende `TimbreEscolar-Setup` (192.168.4.1)
+  **y** se une al WiFi del colegio; la app lo encuentra sola (`TimbreEscolar.local`)
+- **Historial en el ESP32**: guarda los últimos 150 timbres en LittleFS; la app los
+  importa sola al conectar (nada se pierde con la app cerrada)
 - **Modo Demo + mock**: presentaciones (1 s = 1 min) y simulador ESP32 (`npm run mock`)
 - **Seguridad**: autenticación, validación, watchdog hardware
 
@@ -52,18 +58,28 @@ timbre-escolar-inteligente/
   → doble click → **Listo**
 
 ### B) Programas para compilar/desarrollar
-| Programa | Para qué | Instalación |
-|----------|----------|-------------|
-| **Git** | clonar la repo | `winget install Git.Git` |
-| **Node.js 18+** (con npm) | app React / Tauri | `winget install OpenJS.NodeJS.LTS` |
-| **Rust** (rustup) | backend de la app | `winget install Rustlang.Rust.GNU` |
-| **VS 2022 Build Tools** | compilar el Rust de Windows | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.NativeDesktop --quiet"` |
-| **PlatformIO** | compilar/subir el ESP32 | extensión de VS Code o `pip install platformio` |
 
-Ver comandos exactos en [COMANDOS_TIMBRE_ESCOLAR.txt](COMANDOS_TIMBRE_ESCOLAR.txt).
+Instala **todo** esto en el PC nuevo (es lo que hace falta de verdad):
+
+| # | Programa | Para qué se necesita | Instalación (PowerShell como usuario) |
+|---|----------|----------------------|----------------------------------------|
+| 1 | **Git** | clonar esta repo | `winget install Git.Git` |
+| 2 | **Node.js 18+** (trae npm) | app React + app de escritorio | `winget install OpenJS.NodeJS.LTS` |
+| 3 | **Python 3.11+** | PlatformIO (el CLI se instala con pip) | `winget install Python.Python.3.11` |
+| 4 | **Rust** (rustup) | backend de la app de escritorio | `winget install Rustlang.Rust.GNU` |
+| 5 | **VS 2022 Build Tools** (C++) | enlazar el Rust en Windows | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.NativeDesktop --quiet"` |
+| 6 | **PlatformIO** | compilar/subir el firmware del ESP32 | `pip install platformio` (o extensión de VS Code) |
+| 7 | *(opcional)* **VS Code** | editar código con asistencia | `winget install Microsoft.VisualStudioCode` |
+
+Notas:
+- **Java NO se necesita** (eso es del Arduino IDE clásico; PlatformIO no lo usa).
+- **No hace falta ESP-IDF ni Android Studio.**
+- Espacio aprox.: **~6 GB** libres (Node + Rust + toolchains de C++).
+- Windows 10/11 64 bits; **Python y Rust se instalan a nivel de usuario** (sin UAC),
+  solo Build Tools pide administrador.
 
 ### C) Firmware ESP32
-- PlatformIO (VS Code extension o CLI)
+- PlatformIO (VS Code extension o CLI) + Python (ya incluidos en la tabla B)
 - ESP32 DevKit V1
 
 ### D) Hardware (montaje físico del timbre)
@@ -73,13 +89,31 @@ Ver comandos exactos en [COMANDOS_TIMBRE_ESCOLAR.txt](COMANDOS_TIMBRE_ESCOLAR.tx
 - Fuente 5V USB o 5V 2A
 - (Opcional) Módulo RTC DS3231: **no necesario**, la hora vive en NVS del ESP32 y se refresca con NTP
 
+## Cómo funciona de verdad
+
+1. **El ESP32 es el que manda.** El horario vive en la placa; son los eventos automáticos
+   aunque la PC esté apagada, la app cerrada o el WiFi caído.
+2. **Se enciende solo.** Conectado al cargador USB 5V de la pared (junto al timbre),
+   siempre levanta su red propia `TimbreEscolar-Setup` (`192.168.4.1`) **y** se une al
+   WiFi del colegio. Si el colegio se queda sin internet, la red propia sigue activa.
+3. **La PC solo necesita WiFi.** La app busca al timbre sola:
+   `TimbreEscolar.local` → `192.168.4.1` → `localhost:81` (botón **Buscar timbre**
+   en Dispositivo, o Ajustes → Red).
+4. **El historial no se pierde.** Cada timbre queda guardado en la placa
+   (últimos 150 eventos en LittleFS). Al conectar, la app los baja en bloques de 25
+   y los mezcla con su historial (sin duplicados) → aviso "Historial importado".
+5. **Desde el celular**: `npm run serve` sirve la app en `http://<IP-de-la-PC>:4173`;
+   entras con el navegador del teléfono a la misma red.
+6. **Alimentación**: cargador USB 5V enchufado a la pared junto al timbre.
+   El USB de la PC solo sirve para programar la placa (no alimentarla).
+
 ## Instalación
 
 ### Aplicación de escritorio (otro PC) — sin comandos, 3 pasos
 
 1. Abrir la última Release:
    https://github.com/tilinaso26-00/timbre-escolar-inteligente/releases/latest
-2. Descargar `Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi` (o el `.exe`/NSIS)
+2. Descargar `Timbre Escolar Inteligente_1.0.1_x64_es-ES.msi` (o el `.exe`/NSIS)
    y hacer **doble click → Sí (UAC) → Listo**
 3. Abrir **Timbre Escolar Inteligente** desde el Menú Inicio.
 
@@ -100,6 +134,17 @@ npm run dev
 ```
 
 La aplicación estará disponible en `http://localhost:3000`
+
+### Control desde el celular
+
+```bash
+npm run build     # genera app/dist (raíz del proyecto)
+npm run serve     # imprime http://<IP-de-la-PC>:4173
+```
+- Abre esa URL en el navegador del celular (misma WiFi/ala que la PC).
+- Si Windows bloquea, aprueba el reglamento de firewall que imprime el comando:
+  `netsh advfirewall firewall add rule name="Timbre Escolar app" dir=in action=allow protocol=TCP localport=4173`
+- Para pararlo: Ctrl+C en la consola.
 
 ### Firmware ESP32
 
@@ -132,7 +177,14 @@ Editar `firmware/src/config.h`:
 ```cpp
 #define WIFI_SSID "TU_SSID"
 #define WIFI_PASSWORD "TU_PASSWORD"
+#define WIFI_STA_ENABLED true      // unirse a la red del colegio
+#define WIFI_AP_ALWAYS_ON true     // su propia red SIEMPRE encendida
+#define AP_SSID "TimbreEscolar-Setup"
+#define AP_PASSWORD "Timbre#Escolar2026"
 ```
+
+> ⚠️ Credenciales de prueba: cámbialas antes de dejarlo operativo y **no las subas**
+> a un repositorio público.
 
 ### Zona Horaria
 Por defecto: Guatemala (UTC-6)
@@ -154,8 +206,8 @@ Por defecto: Guatemala (UTC-6)
 3. **Configurar jornadas**: Matutina / Vespertina
 4. **Crear horarios**: Editor visual con drag & drop
 5. **Calendario**: Asignar horarios por fecha
-6. **Conectar el timbre**: en Ajustes → WebSocket, poner la IP del ESP32
-   (`ws://<IP_ESP32>:81`) y el token (`timbre-escolar-2024`)
+6. **Conectar el timbre**: la app lo busca sola (mDNS → `192.168.4.1` → local).
+   Si no lo encuentra: Dispositivo → **Buscar timbre**, o Ajustes → Red.
 7. **Sincronizar**: botón "Sincronizar" → ESP32
 8. **Probar**: botón "Probar timbre" en panel Dispositivo
 
@@ -177,7 +229,8 @@ sin tocar el ESP32. También existe el **Modo Demo** en la app (1 s = 1 min).
 | POST | `/api/schedule` | Recibir nuevo horario |
 | POST | `/api/bell/manual` | Timbre manual |
 | POST | `/api/bell/test` | Prueba de timbre |
-| GET | `/api/logs` | Historial de eventos |
+| GET | `/api/logs` | Historial de eventos (alias de `/api/history`) |
+| GET | `/api/history` | Historial guardado en el ESP32 (últimos 150) |
 | GET/POST | `/api/config` | Configuración del dispositivo |
 | POST | `/api/reboot` | Reiniciar ESP32 |
 | POST | `/api/factory-reset` | Formatear LittleFS + reiniciar |
@@ -189,11 +242,14 @@ sin tocar el ESP32. También existe el **Modo Demo** en la app (1 s = 1 min).
 - `bell:manual` - Activar timbre manual
 - `bell:test` - Prueba de timbre
 - `config:update` - Actualizar configuración
+- `time:sync` - Enviar hora de la PC al ESP32
+- `history:request` - Pedir el historial guardado (offset/limit, bloques de 25)
 
 **ESP32 → App:**
 - `status` - Estado periódico (cada 5s)
 - `sync:complete` - Sincronización exitosa
-- `time:sync` - Hora enviada al reconectar
+- `time:sync` - Respuesta de hora
+- `history:events` - Bloque de historial (`items`, `total`, `done`)
 - `bell:executed` - Timbre ejecutado en tiempo real
 - `error` - Errores del sistema
 
@@ -215,6 +271,9 @@ npm run tauri:build    # Genera MSI + NSIS instaladores
 
 # Simulador ESP32 (desde la raíz)
 npm run mock           # ws://localhost:81
+
+# Servir la app para el celular (desde la raíz, tras npm run build en app/)
+npm run serve          # http://<IP-de-la-PC>:4173
 
 # Firmware (desde firmware/)
 pio run                 # Compilar

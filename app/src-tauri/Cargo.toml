@@ -1,6 +1,6 @@
 [package]
 name = "timbre-escolar"
-version = "1.0.0"
+version = "1.0.1"
 description = "Timbre Escolar Inteligente - Sistema de automatización de timbres escolares"
 authors = ["Timbre Escolar Team"]
 license = "MIT"

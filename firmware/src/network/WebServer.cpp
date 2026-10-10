@@ -6,13 +6,14 @@
 
 WebServerWrapper::WebServerWrapper() : server(80) {}
 
-void WebServerWrapper::setDependencies(ScheduleStore* ss, TimeManager* tm, WiFiManager* wm, RelayControl* r, Logger* log, StateManager* sm) {
+void WebServerWrapper::setDependencies(ScheduleStore* ss, TimeManager* tm, WiFiManager* wm, RelayControl* r, Logger* log, StateManager* sm, HistoryLog* hl) {
     scheduleStore = ss;
     timeManager = tm;
     wifiManager = wm;
     relay = r;
     logger = log;
     stateManager = sm;
+    historyLog = hl;
 }
 
 void WebServerWrapper::init() {
@@ -61,6 +62,9 @@ void WebServerWrapper::setupRoutes() {
     server.on("/api/logs", HTTP_GET, [this]() { 
         if (requireAuth()) handleLogs(); 
     });
+    server.on("/api/history", HTTP_GET, [this]() {
+        if (requireAuth()) handleHistory();
+    });
     server.on("/api/reboot", HTTP_POST, [this]() { 
         if (requireAuth()) handleReboot(); 
     });
@@ -95,6 +99,12 @@ void WebServerWrapper::handleStatus() {
     doc["nextEvent"] = scheduleStore ? scheduleStore->getEventCount() : 0;
     doc["scheduledCount"] = scheduleStore ? scheduleStore->getEventCount() : 0;
     doc["relayState"] = relay ? relay->getState() : false;
+    doc["mode"] = wifiManager->getMode();
+    doc["apSSID"] = wifiManager->getApSSID();
+    doc["apIP"] = wifiManager->getApIP();
+    doc["apActive"] = wifiManager->isApActive();
+    doc["staConnected"] = wifiManager->isConnected();
+    doc["historyCount"] = historyLog ? historyLog->count() : 0;
     doc["uptime"] = millis();
     doc["freeHeap"] = ESP.getFreeHeap();
 
@@ -232,6 +242,9 @@ void WebServerWrapper::handleManualBell() {
         if (duration < 1) duration = 1;
         if (duration > 60) duration = 60;
         relay->activate(duration * 1000);
+        if (historyLog) {
+            historyLog->record("Timbre manual", "manual", "matutina", "manual", duration, true);
+        }
         doc["status"] = "ok";
         doc["message"] = "Timbre manual activado";
     } else {
@@ -247,9 +260,18 @@ void WebServerWrapper::handleTestBell() {
 }
 
 void WebServerWrapper::handleLogs() {
-    StaticJsonDocument<2048> doc;
-    JsonArray arr = doc.createNestedArray("logs");
-    doc["count"] = 0;
+    handleHistory();
+}
+
+void WebServerWrapper::handleHistory() {
+    JsonDocument doc;
+    if (historyLog) {
+        historyLog->writeAll(doc);
+    } else {
+        doc["events"].to<JsonArray>();
+    }
+    doc["count"] = doc["events"].as<JsonArray>().size();
+    doc["max"] = historyLog ? historyLog->maxEvents() : 0;
     sendJSON(200, doc);
 }
 

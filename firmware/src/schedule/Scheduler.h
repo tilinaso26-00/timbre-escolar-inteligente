@@ -2,6 +2,7 @@
 #define SCHEDULER_H
 
 #include "ScheduleStore.h"
+#include "HistoryLog.h"
 #include "time/TimeManager.h"
 #include "hardware/RelayControl.h"
 #include "utils/Logger.h"
@@ -13,6 +14,7 @@ private:
     TimeManager* timeManager;
     RelayControl* relay;
     Logger* logger;
+    HistoryLog* historyLog = nullptr;
 
     int lastCheckedMinute = -1;
     String lastBellTime = "";
@@ -48,6 +50,9 @@ public:
     String getLastBellTime();
     String getLastExecutedEvent();
     void forceRebuild();
+
+    // Historial propio del ESP32 (registrado en notifyBellExecuted)
+    void setHistoryLog(HistoryLog* hl);
 
     // Aviso de timbre ejecutado hacia la aplicación (evento bell:executed)
     void setBellNotifier(std::function<void(const String&)> notifier);

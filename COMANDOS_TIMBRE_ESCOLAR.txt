@@ -5,7 +5,7 @@
 
 # ------------------------------------------------------------
 # USUARIO FINAL: NO SE USA NINGÚN COMANDO
-#   1. Doble click en  app\src-tauri\target\release\bundle\msi\Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi
+#   1. Doble click en  app\src-tauri\target\release\bundle\msi\Timbre Escolar Inteligente_1.0.1_x64_es-ES.msi
 #   2. Aceptar el UAC ("Sí")
 #   3. Abrir "Timbre Escolar Inteligente" desde el Menú Inicio
 #   El programa solo se cierra con: clic derecho en el icono de la
@@ -13,14 +13,23 @@
 # ------------------------------------------------------------
 
 # REQUISITOS PREVIOS (una sola vez, solo para desarrollar)
-winget install Rustlang.Rust.GNU
+# Sin Git no se puede clonar la repo; sin Python no corre PlatformIO.
+winget install Git.Git
 winget install OpenJS.NodeJS.LTS
+winget install Python.Python.3.11
+winget install Rustlang.Rust.GNU
 winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.NativeDesktop --quiet"
 
-rustc --version
+# PlatformIO (usa el Python de arriba)
+python --version
+pip install platformio
+
+git --version
 node --version
 npm --version
 cargo --version
+pio --version
+# Nota: JAVA NO hace falta (eso era del Arduino IDE clásico).
 
 # INSTALAR DEPENDENCIAS (una vez)
 cd /d C:\Users\Robot\Documents\TImbrev1\app
@@ -39,11 +48,20 @@ npm run mock
 cd /d C:\Users\Robot\Documents\TImbrev1\app
 npm run tauri:dev
 
+# CONTROLAR EL TIMBRE DESDE EL CELULAR (misma WiFi que la PC)
+cd /d C:\Users\Robot\Documents\TImbrev1
+npm run build
+npm run serve
+# -> imprime http://<IP-DE-LA-PC>:4173; abrirla en el navegador del celular
+# Si Windows lo bloquea (PowerShell admin):
+netsh advfirewall firewall add rule name="Timbre Escolar app" dir=in action=allow protocol=TCP localport=4173
+# Parar: Ctrl+C
+
 # BUILD FINAL (GENERAR INSTALADORES .MSI Y .EXE)
 cd /d C:\Users\Robot\Documents\TImbrev1\app
 npm run tauri:build
-# -> src-tauri\target\release\bundle\msi\Timbre Escolar Inteligente_1.0.0_x64_es-ES.msi
-# -> src-tauri\target\release\bundle\nsis\Timbre Escolar Inteligente_1.0.0_x64-setup.exe
+# -> src-tauri\target\release\bundle\msi\Timbre Escolar Inteligente_1.0.1_x64_es-ES.msi
+# -> src-tauri\target\release\bundle\nsis\Timbre Escolar Inteligente_1.0.1_x64-setup.exe
 
 # CALIDAD DE CÓDIGO (obligatorio antes de guardar)
 cd /d C:\Users\Robot\Documents\TImbrev1\app

@@ -9,10 +9,15 @@ class Logger {
 private:
     LogLevel minLevel = LOG_INFO;
     String lastBellTime = "";
+    bool fileSink = false;
+
+    void writeToFile(const char* timestamp, const char* prefix, const char* buffer);
 
 public:
     Logger();
     void init();
+    // Escribe WARN/ERROR en LittleFS (se llama tras montar el filesystem)
+    void initFileSink();
     void setLevel(LogLevel level);
     void debug(const char* fmt, ...);
     void info(const char* fmt, ...);

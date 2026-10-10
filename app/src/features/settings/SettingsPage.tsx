@@ -77,13 +77,27 @@ export function SettingsPage() {
 
   const handleSaveEndpoint = () => {
     const url = wsEndpoint.url.trim();
-    if (!/^wss?:\/\//.test(url)) {
+    if (url && !/^wss?:\/\//.test(url)) {
       addToast({ type: 'error', title: 'Error', message: 'La URL debe empezar con ws:// o wss://' });
       return;
     }
     configureWsEndpoint(url, wsEndpoint.token);
     setWsEndpoint(getWsEndpoint());
-    addToast({ type: 'success', title: 'Conexión actualizada', message: 'Reconectando con el dispositivo' });
+    addToast({
+      type: 'success',
+      title: 'Conexión actualizada',
+      message: url ? 'Reconectando con el dispositivo' : 'Búsqueda automática activada',
+    });
+  };
+
+  const handleDiscover = () => {
+    configureWsEndpoint('', wsEndpoint.token);
+    setWsEndpoint(getWsEndpoint());
+    addToast({
+      type: 'info',
+      title: 'Buscando timbre',
+      message: 'Probando TimbreEscolar.local, 192.168.4.1 y la PC local…',
+    });
   };
 
   const handleChangePassword = async () => {
@@ -214,15 +228,27 @@ export function SettingsPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label htmlFor="ws-url" className="block text-sm font-medium text-gray-700 mb-1">URL del WebSocket</label>
-                  <Input id="ws-url" value={wsEndpoint.url} onChange={e => setWsEndpoint({ ...wsEndpoint, url: e.target.value })} className="w-full" placeholder="ws://192.168.4.1:81" />
+                  <Input
+                    id="ws-url"
+                    value={wsEndpoint.url}
+                    onChange={e => setWsEndpoint({ ...wsEndpoint, url: e.target.value })}
+                    className="w-full"
+                    placeholder="vacío = búsqueda automática"
+                  />
                 </div>
                 <div>
                   <label htmlFor="ws-token" className="block text-sm font-medium text-gray-700 mb-1">Token del dispositivo</label>
                   <Input id="ws-token" value={wsEndpoint.token} onChange={e => setWsEndpoint({ ...wsEndpoint, token: e.target.value })} className="w-full" />
                 </div>
               </div>
-              <p className="text-xs text-gray-500">El token debe coincidir con el configurado en el ESP32. Ejemplo de red del dispositivo: ws://192.168.4.1:81</p>
-              <Button onClick={handleSaveEndpoint}>Guardar y reconectar</Button>
+              <p className="text-xs text-gray-500">
+                Con la URL vacía la app busca sola: <code>TimbreEscolar.local</code> → <code>192.168.4.1</code> (red propia del timbre) → <code>localhost</code>.
+                Déjala fija solo si sabes la IP del ESP32.
+              </p>
+              <div className="flex gap-2">
+                <Button onClick={handleSaveEndpoint}>Guardar y reconectar</Button>
+                <Button variant="outline" onClick={handleDiscover}>Buscar timbre</Button>
+              </div>
             </CardContent>
           </Card>
 

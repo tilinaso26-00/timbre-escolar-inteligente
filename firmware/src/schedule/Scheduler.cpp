@@ -261,8 +261,18 @@ void Scheduler::setBellNotifier(std::function<void(const String&)> notifier) {
     bellNotifier = notifier;
 }
 
+void Scheduler::setHistoryLog(HistoryLog* hl) {
+    historyLog = hl;
+}
+
 void Scheduler::notifyBellExecuted(const String& eventName, const String& eventType, const String& journey,
                                    const char* triggeredBy, int durationSec) {
+    // Se registra SIEMPRE en el historial propio, aunque no haya app conectada
+    if (historyLog) {
+        historyLog->record(eventName, eventType, journey,
+                           triggeredBy ? triggeredBy : "automatic", durationSec, true);
+    }
+
     if (!bellNotifier) return;
 
     StaticJsonDocument<640> doc;

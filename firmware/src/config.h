@@ -17,11 +17,23 @@
 #define RELAY_SAFETY_MAX_MS 60000
 
 // WiFi
+// NOTA DE SEGURIDAD: estas credenciales son de PRUEBA. Antes de dejarlo
+// operativo hay que cambiarlas y NO subirlas a ningún repositorio público.
 #define WIFI_SSID "COLEGIO_WIFI"
 #define WIFI_PASSWORD "colegio2024"
-#define WIFI_FALLBACK_AP true
+#define WIFI_STA_ENABLED true      // unirse a la red del colegio
+#define WIFI_AP_ALWAYS_ON true     // SIEMPRE encender su propia red
+#define WIFI_AP_MAX_CLIENTS 4      // PC + celular + margen
 #define AP_SSID "TimbreEscolar-Setup"
 #define AP_PASSWORD "Timbre#Escolar2026"
+
+// Historial de timbres (se guarda en LittleFS: sobrevive reinicios/apagones)
+#define HISTORY_FILE "/history.json"
+#define HISTORY_MAX_EVENTS 150     // cuántos eventos recuerda el ESP32
+
+// Logs del sistema (solo WARN/ERROR) en LittleFS
+#define LOG_FILE "/logs/timbre.log"
+#define LOG_FILE_MAX_BYTES 32768   // rota al llegar a 32 KB
 
 // NTP
 #define NTP_SERVER_1 "pool.ntp.org"

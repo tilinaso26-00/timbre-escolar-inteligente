@@ -17,9 +17,10 @@
 
 ### 2.1 "ESP32 Desconectado" en Dashboard
 | Causa | Verificación | Solución |
-|-------|--------------|----------|
-| WiFi caído | LED_ERROR parpadea | Reiniciar router / Verificar credenciales en config.h |
-| IP cambiada | Ping a IP anterior | Usar mDNS `timbre-escolar.local` / Verificar DHCP lease |
+|-------|----------|----------|
+| La app no encuentra el timbre | Dispositivo → endpoint muestra `192.168.4.1` o `localhost` | Botón **Buscar timbre** (prueba mDNS → 192.168.4.1 → local); revisar que la PC esté en la misma red |
+| WiFi del colegio caído | Tarjeta "WiFi del colegio: Sin señal" | El timbre **sigue sonando solo**; la red propia `TimbreEscolar-Setup` sigue activa (conecta la PC/celular a ella) |
+| IP cambiada | Ping a IP anterior | Usar mDNS `TimbreEscolar.local` / Verificar DHCP lease |
 | Firewall bloquea WS | `telnet <IP> 81` falla | Abrir puerto 81 (WebSocket) + 80 (REST) |
 | ESP32 reiniciando | LED_OK parpadea cada 30s | Ver §3 (Watchdog / Alimentación) |
 | LittleFS corrupto | Logs: "Mount failed" | `pio run -t erase_flash` + re-subir firmware (LittleFS se formatea solo al arrancar) |
@@ -33,12 +34,30 @@
 | "LittleFS full" | Espacio agotado | `POST /api/factory-reset` (borra LittleFS) o `pio run -t erase_flash` + re-subir firmware |
 | Timeout WS | `connect_error` | Aumentar `WS_HEARTBEAT_INTERVAL` / Verificar latencia |
 
-### 2.3 Modo AP no levanta
+### 2.3 La red propia del timbre no levanta
 | Verificación | Acción |
 |--------------|--------|
-| `WIFI_FALLBACK_AP = true` en config.h | Compilar y subir |
+| `WIFI_AP_ALWAYS_ON = true` en config.h | Compilar y subir (`pio run -t upload`) |
+| La placa está encendida (LED OK) | Medir 5V en VIN |
+| Otra red con el mismo nombre | Cambiar `AP_SSID` en config.h |
+| 4 clientes ya conectados | Subir `WIFI_AP_MAX_CLIENTS` o desconectar uno |
 | GPIO0 (BTN_RESET) no cortocircuitado | Verificar soldadura / botón |
-| Alimentación estable 5V | Medir buck OUT = 5.0V |
+
+### 2.4 La app no ve los timbres antiguos
+| Verificación | Acción |
+|--------------|--------|
+| Aviso "Historial importado: N eventos nuevos" apareció al conectar | Ya está; revisa Historial |
+| No apareció | Dispositivo → **Buscar timbre**; revisa en Network (DevTools) los frames `history:request` / `history:events` |
+| El timbre lleva poco encendido | El ESP32 guarda solo los últimos 150 eventos (`HISTORY_MAX_EVENTS` en config.h) |
+| Historial limpiado desde la app | La importación vuelve a copiar lo que siga en el ESP32 |
+
+### 2.5 El celular no abre la app (`npm run serve`)
+| Verificación | Acción |
+|--------------|--------|
+| `app/dist` no existe | Ejecutar `npm run build` en la raíz |
+| Windows bloquea | Regla de firewall (PowerShell admin): `netsh advfirewall firewall add rule name="Timbre Escolar app" dir=in action=allow protocol=TCP localport=4173` |
+| Celular en otra red/datos móviles | Conectar el celular a la MISMA WiFi que la PC |
+| Puerto ocupado | `PORT=4174 npm run serve` |
 
 ---
 
@@ -201,12 +220,17 @@ pio device monitor --filter log_level=debug
 | `[ERROR]` | Crítico (fallo HW, sync failed, crash) |
 | `[DEBUG]` | Verbose (loop timing, I2C, WS frames) |
 
+El propio ESP32 guarda además sus advertencias en **`/logs/timbre.log`** (LittleFS,
+solo WARN/ERROR, rota a 32 KB). El historial de timbres está en `GET /api/history`
+o la app lo baja sola por WS al conectar.
+
 ### 9.3 Logs de la App
 - Instalada: `%LOCALAPPDATA%\com.timbre-escolar.inteligente\logs\logs.log`
 - Desarrollo: pestaña Console del navegador (errores JS, frames WS)
-- **Network → WS**: frames `sync:request`, `status`, `bell:executed`
+- **Network → WS**: frames `sync:request`, `status`, `bell:executed`, `history:request`, `history:events`
 - **Application → IndexedDB**: `TimbreEscolarDB` → journeys, templates, exceptions, events
-- **Application → LocalStorage**: `auth-storage`, `timbre.wsUrl`, preferencias
+- **Application → LocalStorage**: `auth-storage`, `timbre.wsUrl` (manual),
+  `timbre.wsUrlAuto` (última URL que funcionó), `timbre.wsToken`, preferencias
 
 ---
 
@@ -268,8 +292,9 @@ R: Solo Español. i18n preparado: Config → General → Idioma (preparado para 
 
 | Versión | Fecha | Cambios Principales |
 |---------|-------|---------------------|
-| v1.0.0 | 2026-09 | App de escritorio Tauri (bandeja, arranque con Windows, ventana única, logs, poda de historial), Dashboard, Editor Horarios, Calendario, Plantillas, Historial, Dispositivo, Config, Demo Mode, Sync WS/REST, Auth, PWA, mock ESP32 (`npm run mock`), firmware con hora en NVS, subida serial por defecto + OTA opcional |
+| v1.0.1 | 2026-10 | ESP32 autónomo: red propia `TimbreEscolar-Setup` siempre encendida + unión al WiFi del colegio (`WIFI_AP_STA`), historial propio guardado en LittleFS (`HistoryLog`, 150 eventos, `/api/history` + WS `history:request`), app con descubrimiento automático (mDNS → 192.168.4.1 → local) e importación de historial con dedup, control desde el celular (`npm run serve`), logs WARN/ERROR en `/logs/timbre.log`, docs de requisitos completos (Python, Git, Rust, Build Tools) |
+| v1.0.0 | 2026-09 | App de escritorio Tauri (bandeja, arranque con Windows, ventana única, logs, poda del historial), Dashboard, Editor Horarios, Calendario, Plantillas, Historial, Dispositivo, Config, Demo Mode, Sync WS/REST, Auth, PWA, mock ESP32 (`npm run mock`), firmware con hora en NVS, subida serial por defecto + OTA opcional |
 
 ---
 
-*Última actualización: 2026-09-30 | Versión documento: 1.1*
+*Última actualización: 2026-10-09 | Versión documento: 1.2*

@@ -7,13 +7,15 @@ Scheduler* gScheduler = nullptr;
 
 WebSocketServerWrapper::WebSocketServerWrapper() : server(81) {}
 
-void WebSocketServerWrapper::setDependencies(ScheduleStore* ss, TimeManager* tm, WiFiManager* wm, RelayControl* r, Logger* log, StateManager* sm, Scheduler* sched) {
+void WebSocketServerWrapper::setDependencies(ScheduleStore* ss, TimeManager* tm, WiFiManager* wm, RelayControl* r, Logger* log, StateManager* sm, Scheduler* sched, HistoryLog* hl) {
     scheduleStore = ss;
     timeManager = tm;
     wifiManager = wm;
     relay = r;
     logger = log;
     stateManager = sm;
+    scheduler = sched;
+    historyLog = hl;
     gScheduler = sched;
 }
 
@@ -132,6 +134,26 @@ void WebSocketServerWrapper::onEvent(uint8_t num, WStype_t type, uint8_t* payloa
                 String output;
                 serializeJson(resp, output);
                 sendTo(num, output);
+            } else if (strcmp(event, "history:request") == 0) {
+                // La app pide el historial guardado en el ESP32 (en chunks de 25)
+                int offset = doc["data"]["offset"] | 0;
+                int limit = doc["data"]["limit"] | 25;
+                int total = historyLog ? historyLog->count() : 0;
+
+                JsonDocument resp;
+                resp["event"] = "history:events";
+                resp["data"]["offset"] = offset;
+                resp["data"]["total"] = total;
+                int written = 0;
+                if (historyLog) {
+                    written = historyLog->writeChunk(resp["data"].to<JsonObject>(), offset, limit);
+                }
+                resp["data"]["done"] = (offset + written >= total);
+
+                String output;
+                serializeJson(resp, output);
+                sendTo(num, output);
+                logger->info("history:events offset=%d escritos=%d total=%d", offset, written, total);
             } else if (strcmp(event, "demo:start") == 0) {
                 // Demo mode
             } else if (strcmp(event, "demo:stop") == 0) {
@@ -155,7 +177,7 @@ void WebSocketServerWrapper::broadcast(const String& message) {
 }
 
 void WebSocketServerWrapper::broadcastHeartbeat() {
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<1024> doc;
     doc["event"] = "status";
     doc["data"]["connected"] = wifiManager->isConnected();
     doc["data"]["wifi"] = wifiManager->isConnected();
@@ -166,6 +188,15 @@ void WebSocketServerWrapper::broadcastHeartbeat() {
     doc["data"]["lastEvent"] = gScheduler ? gScheduler->getLastExecutedEvent() : "";
     doc["data"]["scheduledCount"] = scheduleStore ? scheduleStore->getEventCount() : 0;
     doc["data"]["relayState"] = relay ? relay->getState() : false;
+    doc["data"]["mode"] = wifiManager->getMode();
+    doc["data"]["apSSID"] = wifiManager->getApSSID();
+    doc["data"]["apIP"] = wifiManager->getApIP();
+    doc["data"]["staConnected"] = wifiManager->isConnected();
+    doc["data"]["ip"] = wifiManager->getIP();
+    doc["data"]["rssi"] = wifiManager->getRSSI();
+    doc["data"]["uptime"] = millis();
+    doc["data"]["freeHeap"] = ESP.getFreeHeap();
+    doc["data"]["historyCount"] = historyLog ? historyLog->count() : 0;
 
     String output;
     serializeJson(doc, output);
