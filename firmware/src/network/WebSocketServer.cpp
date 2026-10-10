@@ -142,13 +142,16 @@ void WebSocketServerWrapper::onEvent(uint8_t num, WStype_t type, uint8_t* payloa
 
                 JsonDocument resp;
                 resp["event"] = "history:events";
-                resp["data"]["offset"] = offset;
-                resp["data"]["total"] = total;
+                // IMPORTANTE: crear "data" ANTES de asignarle campos
+                // (.to<JsonObject>() borra lo que ya tuviera el objeto)
+                JsonObject data = resp["data"].to<JsonObject>();
                 int written = 0;
                 if (historyLog) {
-                    written = historyLog->writeChunk(resp["data"].to<JsonObject>(), offset, limit);
+                    written = historyLog->writeChunk(data, offset, limit);
                 }
-                resp["data"]["done"] = (offset + written >= total);
+                data["offset"] = offset;
+                data["total"] = total;
+                data["done"] = (offset + written >= total);
 
                 String output;
                 serializeJson(resp, output);

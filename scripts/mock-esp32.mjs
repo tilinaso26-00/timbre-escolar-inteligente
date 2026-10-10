@@ -30,7 +30,7 @@ const { WebSocketServer } = await loadWs();
 
 const TOKEN = 'timbre-escolar-2024';
 const DEVICE_ID = 'ESP32-MOCK';
-const FIRMWARE_VERSION = '1.0.0-mock';
+const FIRMWARE_VERSION = '1.0.1-mock';
 const port = Number(process.argv[2] || 81);
 
 const clients = new Set();
@@ -77,32 +77,29 @@ function buildStatus() {
   };
 }
 
-// Historial que "guarda" el mock (para probar la importación en la app)
-const today = new Date().toISOString().slice(0, 10);
-const mockHistory = [
-  {
-    timestamp: `${today}T07:00:00`,
-    eventName: 'Entrada',
-    type: 'entrada',
-    journey: 'matutina',
+// Historial que "guarda" el mock (para probar la importación en la app).
+// 40 eventos a propósito: la app los baja en chunks de 25 (25 + 15),
+// igual que con el ESP32 real (máx. 150).
+const pad2 = n => String(n).padStart(2, '0');
+const nowDate = new Date();
+const today = `${nowDate.getFullYear()}-${pad2(nowDate.getMonth() + 1)}-${pad2(nowDate.getDate())}`;
+
+const mockHistory = [];
+for (let i = 0; i < 40; i++) {
+  const hour = 7 + Math.floor(i / 60);
+  const minute = i % 60;
+  mockHistory.push({
+    timestamp: `${today}T${pad2(hour)}:${pad2(minute)}:00`,
+    eventName: i === 0 ? 'Apertura de puertas' : i === 1 ? 'Primera hora' : `Timbre ${i + 1}`,
+    type: i === 0 ? 'entrada' : 'cambio_periodo',
+    journey: i % 12 === 0 && i > 0 ? 'vespertina' : 'matutina',
     origin: 'automatic',
     durationSec: 3,
     executed: true,
     deviceId: DEVICE_ID,
     firmwareVersion: FIRMWARE_VERSION,
-  },
-  {
-    timestamp: `${today}T07:05:00`,
-    eventName: 'Primera hora',
-    type: 'cambio_periodo',
-    journey: 'matutina',
-    origin: 'automatic',
-    durationSec: 3,
-    executed: true,
-    deviceId: DEVICE_ID,
-    firmwareVersion: FIRMWARE_VERSION,
-  },
-];
+  });
+}
 
 let lastBellTime = '--:--';
 let lastBellEvent = '';
@@ -119,22 +116,42 @@ function activateRelay(durationSec, trigger) {
     heartbeat();
   }, durationSec * 1000);
 
+  // Un solo timestamp para el evento en vivo y el historial guardado,
+  // igual que el firmware (evita duplicados al importar)
+  const stamp = nowIso();
+  const bellTime = stamp.slice(11, 19);
+
   lastBellTime = new Date().toTimeString().slice(0, 5);
   lastBellEvent = trigger.eventName;
 
   broadcast('bell:executed', {
     eventName: trigger.eventName,
-    timestamp: nowIso(),
+    timestamp: stamp,
     eventType: trigger.eventType || 'cambio_periodo',
     journey: trigger.journey || 'matutina',
     triggeredBy: trigger.triggeredBy || 'manual',
     executed: true,
-    actualBellTime: nowIso(),
+    actualBellTime: bellTime,
     durationSeconds: durationSec,
     deviceId: DEVICE_ID,
     firmwareVersion: FIRMWARE_VERSION,
     relayActiveMs: Date.now() - startedAt,
   });
+
+  // Paridad con el firmware: el timbre queda guardado en el historial
+  // del "ESP32" aunque la app esté cerrada
+  mockHistory.push({
+    timestamp: stamp,
+    eventName: trigger.eventName,
+    type: trigger.eventType || 'cambio_periodo',
+    journey: trigger.journey || 'matutina',
+    origin: trigger.triggeredBy || 'manual',
+    durationSec,
+    executed: true,
+    deviceId: DEVICE_ID,
+    firmwareVersion: FIRMWARE_VERSION,
+  });
+  if (mockHistory.length > 150) mockHistory.splice(0, mockHistory.length - 150);
 }
 
 const httpServer = createServer((req, res) => {
@@ -234,12 +251,16 @@ wss.on('connection', socket => {
       case 'history:request': {
         const offset = Number(data.offset || 0);
         const limit = Number(data.limit || 25);
-        const items = mockHistory.slice(offset, offset + limit);
+        const total = mockHistory.length;
+        // Igual que el firmware: del más reciente al más viejo
+        const end = total - offset;
+        const start = Math.max(0, end - limit);
+        const items = end > 0 ? mockHistory.slice(start, end).reverse() : [];
         send(socket, 'history:events', {
           offset,
-          total: mockHistory.length,
+          total,
           items,
-          done: offset + items.length >= mockHistory.length,
+          done: offset + items.length >= total,
         });
         break;
       }

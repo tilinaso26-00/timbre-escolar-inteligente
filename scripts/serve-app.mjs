@@ -10,7 +10,7 @@
 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { join, extname, normalize } from 'node:path';
+import { join, extname, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { networkInterfaces } from 'node:os';
 
@@ -50,40 +50,57 @@ async function sendFile(res, filePath) {
 
 const server = createServer((req, res) => {
   void (async () => {
-    const url = new URL(req.url || '/', 'http://localhost');
-    let pathname = decodeURIComponent(url.pathname);
-    if (pathname.includes('..')) {
-      res.writeHead(403);
-      res.end('Prohibido');
-      return;
-    }
+    try {
+      const url = new URL(req.url || '/', 'http://localhost');
+      // decodeURIComponent lanza con secuencias inválidas (/%, %E0): sin este
+      // catch la promesa rechazada tumba el proceso completo
+      let pathname;
+      try {
+        pathname = decodeURIComponent(url.pathname);
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('URL inválida');
+        return;
+      }
+      if (pathname.includes('..')) {
+        res.writeHead(403);
+        res.end('Prohibido');
+        return;
+      }
 
-    let filePath = normalize(join(ROOT, pathname));
-    if (!filePath.startsWith(ROOT)) {
-      res.writeHead(403);
-      res.end('Prohibido');
-      return;
-    }
+      let filePath = normalize(join(ROOT, pathname));
+      if (filePath !== ROOT && !filePath.startsWith(ROOT + sep)) {
+        res.writeHead(403);
+        res.end('Prohibido');
+        return;
+      }
 
-    let info = await stat(filePath).catch(() => null);
-    if (info?.isDirectory()) {
-      filePath = join(filePath, 'index.html');
-      info = await stat(filePath).catch(() => null);
-    }
+      let info = await stat(filePath).catch(() => null);
+      if (info?.isDirectory()) {
+        filePath = join(filePath, 'index.html');
+        info = await stat(filePath).catch(() => null);
+      }
 
-    // SPA: todo lo que no sea un archivo real responde index.html
-    if (!info) {
-      filePath = join(ROOT, 'index.html');
-      info = await stat(filePath).catch(() => null);
-    }
+      // SPA: todo lo que no sea un archivo real responde index.html
+      if (!info) {
+        filePath = join(ROOT, 'index.html');
+        info = await stat(filePath).catch(() => null);
+      }
 
-    if (!info) {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('app/dist no existe. Ejecuta primero: npm run build');
-      return;
-    }
+      if (!info) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('app/dist no existe. Ejecuta primero: npm run build');
+        return;
+      }
 
-    await sendFile(res, filePath);
+      await sendFile(res, filePath);
+    } catch (error) {
+      console.error('Error atendiendo la petición:', error);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Error interno');
+      }
+    }
   })();
 });
 

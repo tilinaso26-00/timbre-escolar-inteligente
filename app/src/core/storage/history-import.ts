@@ -20,12 +20,24 @@ export function bellEventKey(event: Pick<BellEventLog, 'deviceId' | 'timestamp' 
 export function normalizeBellEvent(data: Record<string, unknown>): BellEventLog {
   const timestamp =
     typeof data.timestamp === 'string' && data.timestamp ? data.timestamp : new Date().toISOString();
-  const eventTypeRaw = typeof data.eventType === 'string' ? data.eventType : '';
+  // El ESP32 guarda history.type / history.origin; el evento en vivo
+  // (bell:executed) trae eventType / triggeredBy. Se aceptan ambos nombres.
+  const eventTypeRaw =
+    typeof data.eventType === 'string' && data.eventType
+      ? data.eventType
+      : typeof data.type === 'string'
+        ? data.type
+        : '';
   const eventType = (EVENT_TYPES as string[]).includes(eventTypeRaw)
     ? (eventTypeRaw as EventType)
     : 'cambio_periodo';
   const journey: JourneyType = data.journey === 'vespertina' ? 'vespertina' : 'matutina';
-  const triggeredByRaw = typeof data.triggeredBy === 'string' ? data.triggeredBy : '';
+  const triggeredByRaw =
+    typeof data.triggeredBy === 'string' && data.triggeredBy
+      ? data.triggeredBy
+      : typeof data.origin === 'string'
+        ? data.origin
+        : '';
   const triggeredBy: BellEventLog['triggeredBy'] =
     triggeredByRaw === 'manual' || triggeredByRaw === 'demo' || triggeredByRaw === 'test'
       ? triggeredByRaw
@@ -61,6 +73,13 @@ export function normalizeBellEvent(data: Record<string, unknown>): BellEventLog 
   return event;
 }
 
+// "2026-10-09T07:00:00" (con o sin milisegundos); descarta "" y "----/--/--..."
+const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+
+export function isValidDeviceTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && TIMESTAMP_RE.test(value);
+}
+
 export interface HistoryImportResult {
   received: number;
   added: number;
@@ -74,7 +93,11 @@ export async function importDeviceHistory(items: unknown[]): Promise<HistoryImpo
   const parsed: BellEventLog[] = [];
   for (const item of items) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-    parsed.push(normalizeBellEvent(item as Record<string, unknown>));
+    const record = item as Record<string, unknown>;
+    // Sin hora fiable del dispositivo no se puede deduplicar contra el evento
+    // en vivo (la app ya lo guardó con su propia hora al recibirlo)
+    if (!isValidDeviceTimestamp(record.timestamp)) continue;
+    parsed.push(normalizeBellEvent(record));
   }
   if (parsed.length === 0) return { received, added: 0 };
 

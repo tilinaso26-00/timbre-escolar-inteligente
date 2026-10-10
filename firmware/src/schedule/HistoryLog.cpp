@@ -79,7 +79,7 @@ String HistoryLog::now() {
 
 void HistoryLog::record(const String& eventName, const String& type,
                         const String& journey, const char* origin,
-                        int durationSec, bool executed) {
+                        int durationSec, bool executed, const String& timestamp) {
     if (!loaded) load();
 
     JsonArray events = doc["events"].as<JsonArray>();
@@ -87,9 +87,13 @@ void HistoryLog::record(const String& eventName, const String& type,
         events = doc["events"].to<JsonArray>();
     }
 
-    // Se guarda en orden cronológico (más viejo al inicio)
+    // Se guarda en orden cronológico (más viejo al inicio).
+    // Usa el timestamp que calculó el llamador para que el evento en vivo
+    // (bell:executed) y el guardado en LittleFS sean idénticos: si cada uno
+    // calcula su hora por separado, al cruzar el segundo se duplican en la app.
+    String stamp = timestamp.length() > 0 ? timestamp : now();
     JsonObject evt = events.add<JsonObject>();
-    evt["timestamp"] = now();
+    evt["timestamp"] = stamp;
     evt["eventName"] = eventName;
     evt["type"] = type;
     evt["journey"] = journey;

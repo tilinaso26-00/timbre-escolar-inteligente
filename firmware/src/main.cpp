@@ -28,10 +28,7 @@ SyncProtocol syncProtocol;
 StateManager stateManager;
 
 unsigned long lastHeartbeat = 0;
-unsigned long lastStatusBroadcast = 0;
 unsigned long lastLoopTime = 0;
-
-void broadcastStatus();
 
 void setup() {
     Serial.begin(115200);
@@ -88,37 +85,11 @@ void loop() {
     unsigned long now = millis();
     if (now - lastHeartbeat >= WS_HEARTBEAT_INTERVAL) {
         lastHeartbeat = now;
+        // Estado completo (incluye RSSI, uptime, memoria) cada 5 s.
+        // Antes había un segundo broadcast cada 10 s con campos faltantes
+        // que hacía parpadear la pantalla de Dispositivo.
         wsServer.broadcastHeartbeat();
     }
 
-    if (now - lastStatusBroadcast >= 10000) {
-        lastStatusBroadcast = now;
-        broadcastStatus();
-    }
-
     lastLoopTime = now;
-}
-
-void broadcastStatus() {
-    StaticJsonDocument<1024> doc;
-    doc["event"] = "status";
-    doc["data"]["connected"] = wifiManager.isConnected();
-    doc["data"]["wifi"] = wifiManager.isConnected();
-    doc["data"]["lastSync"] = stateManager.getLastSyncTime();
-    doc["data"]["deviceTime"] = timeManager.getCurrentTimeString();
-    doc["data"]["nextEvent"] = scheduler.getNextEvent();
-    doc["data"]["lastBell"] = scheduler.getLastBellTime();
-    doc["data"]["lastEvent"] = scheduler.getLastExecutedEvent();
-    doc["data"]["scheduledCount"] = scheduleStore.getEventCount();
-    doc["data"]["relayState"] = relay.getState();
-    doc["data"]["mode"] = wifiManager.getMode();
-    doc["data"]["apSSID"] = wifiManager.getApSSID();
-    doc["data"]["apIP"] = wifiManager.getApIP();
-    doc["data"]["staConnected"] = wifiManager.isConnected();
-    doc["data"]["ip"] = wifiManager.getIP();
-    doc["data"]["historyCount"] = historyLog.count();
-
-    String output;
-    serializeJson(doc, output);
-    wsServer.broadcast(output);
 }

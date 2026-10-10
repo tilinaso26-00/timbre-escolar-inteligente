@@ -267,10 +267,17 @@ void Scheduler::setHistoryLog(HistoryLog* hl) {
 
 void Scheduler::notifyBellExecuted(const String& eventName, const String& eventType, const String& journey,
                                    const char* triggeredBy, int durationSec) {
+    // Una sola fuente de verdad para la hora: si el reloj no es válido no se
+    // emite timestamp (evita "----/--/---T--:--:--" y la app usa su hora local)
+    String ts;
+    if (timeManager && timeManager->isTimeValid()) {
+        ts = timeManager->getCurrentDateString() + "T" + timeManager->getCurrentTimeString();
+    }
+
     // Se registra SIEMPRE en el historial propio, aunque no haya app conectada
     if (historyLog) {
         historyLog->record(eventName, eventType, journey,
-                           triggeredBy ? triggeredBy : "automatic", durationSec, true);
+                           triggeredBy ? triggeredBy : "automatic", durationSec, true, ts);
     }
 
     if (!bellNotifier) return;
@@ -284,10 +291,9 @@ void Scheduler::notifyBellExecuted(const String& eventName, const String& eventT
     doc["data"]["executed"] = true;
     doc["data"]["durationSeconds"] = durationSec;
 
-    if (timeManager) {
-        String timestamp = timeManager->getCurrentDateString() + "T" + timeManager->getCurrentTimeString();
-        doc["data"]["timestamp"] = timestamp;
-        doc["data"]["actualBellTime"] = timeManager->getCurrentTimeString();
+    if (ts.length() > 0) {
+        doc["data"]["timestamp"] = ts;
+        doc["data"]["actualBellTime"] = ts.substring(11);
     }
 
     doc["data"]["deviceId"] = DEVICE_NAME;

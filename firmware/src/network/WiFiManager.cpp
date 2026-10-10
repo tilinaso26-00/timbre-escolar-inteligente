@@ -61,17 +61,20 @@ void WiFiManager::connect() {
 void WiFiManager::loop() {
     if (!staEnabled || !staAttempted) return;
 
-    if (WiFi.status() == WL_CONNECTED) {
+    wl_status_t status = WiFi.status();
+    if (status == WL_CONNECTED) {
         reconnectInterval = 5000;
         return;
     }
+    // No interrumpir un intento de unión en curso (estado idle = begin hecho)
+    if (status == WL_IDLE_STATUS) return;
 
     // Reintento con backoff (nunca bloquea el loop principal)
     if (millis() - lastReconnectAttempt >= reconnectInterval) {
         lastReconnectAttempt = millis();
         logger.info("Reintentando conexión WiFi a %s...", ssid);
         WiFi.reconnect();
-        reconnectInterval = reconnectInterval < 30000 ? reconnectInterval * 2 : 30000;
+        reconnectInterval = reconnectInterval * 2 < 30000 ? reconnectInterval * 2 : 30000;
     }
 }
 

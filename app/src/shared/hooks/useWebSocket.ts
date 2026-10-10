@@ -391,10 +391,16 @@ function createBridge(): Bridge {
       case 'history:events': {
         const items = Array.isArray(data.items) ? (data.items as unknown[]) : [];
         const total = typeof data.total === 'number' ? data.total : 0;
+        const done = typeof data.done === 'boolean' ? data.done : undefined;
         historyBuffer.push(...items);
         historyOffset += items.length;
+        // El firmware marca done=true en el último chunk; total es el respaldo
+        const reachedTotal = total > 0 && historyOffset >= total;
         const hasMore =
-          items.length > 0 && historyOffset < total && historyChunks < HISTORY_MAX_CHUNKS;
+          items.length > 0 &&
+          done !== true &&
+          !reachedTotal &&
+          historyChunks < HISTORY_MAX_CHUNKS;
         if (hasMore) requestHistory();
         else void finishHistoryImport();
         break;
