@@ -46,24 +46,31 @@ void setup() {
 
     scheduleStore.init();
     logger.initFileSink();   // WARN/ERROR del sistema en LittleFS
-    timeManager.init(NTP_SERVER_1, NTP_SERVER_2, NTP_SYNC_INTERVAL_MS, TIMEZONE_OFFSET);
-    historyLog.init(&timeManager);   // historial propio (sobrevive apagones)
 
+    // El WiFi va ANTES de TimeManager: NTPClient usa WiFiUDP y en
+    // arduino-esp32 3.x llamarlo antes de que WiFi.mode() arranque el
+    // stack lwIP provoca el assert "tcpip_send_msg_wait_sem (Invalid mbox)".
     // AP propio SIEMPRE encendido + unión a la red del colegio
     wifiManager.init(WIFI_SSID, WIFI_PASSWORD, WIFI_STA_ENABLED, WIFI_AP_ALWAYS_ON,
                      AP_SSID, AP_PASSWORD, WIFI_AP_MAX_CLIENTS);
     wifiManager.connect();
 
+    timeManager.init(NTP_SERVER_1, NTP_SERVER_2, NTP_SYNC_INTERVAL_MS, TIMEZONE_OFFSET);
+    historyLog.init(&timeManager);   // historial propio (sobrevive apagones)
+
     mdns.init(DEVICE_NAME);
-    webServer.init();
-    wsServer.init(WS_PORT);
 
     scheduler.init(&scheduleStore, &timeManager, &relay, &logger);
     scheduler.setHistoryLog(&historyLog);
     stateManager.init(&scheduleStore, &timeManager, &wifiManager, &logger);
 
+    // setDependencies ANTES de init(): init() registra rutas y loguea con el
+    // logger del wrapper; si el puntero sigue sin fijar, truena en null.
     webServer.setDependencies(&scheduleStore, &timeManager, &wifiManager, &relay, &logger, &stateManager, &historyLog);
     wsServer.setDependencies(&scheduleStore, &timeManager, &wifiManager, &relay, &logger, &stateManager, &scheduler, &historyLog);
+
+    webServer.init();
+    wsServer.init(WS_PORT);
 
     // Los timbres ejecutados se publican a la aplicación (evento bell:executed)
     scheduler.setBellNotifier([](const String& payload) { wsServer.broadcast(payload); });

@@ -75,7 +75,8 @@ void TimeManager::setupRTC() {
 }
 
 void TimeManager::loop() {
-    if (ntpClient) {
+    // Sin WiFi no hay DNS: NTPClient spamea "could not get host from dns"
+    if (ntpClient && WiFi.isConnected()) {
         ntpClient->update();
     }
 
