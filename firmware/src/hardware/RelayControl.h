@@ -10,6 +10,7 @@ private:
     unsigned long safetyMaxMs;
     bool state = false;
     unsigned long activationStart = 0;
+    unsigned long activationDuration = 0;
     bool timerActive = false;
 
 public:

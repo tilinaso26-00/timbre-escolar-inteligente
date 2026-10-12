@@ -88,6 +88,7 @@ void loop() {
     wsServer.loop();
     scheduler.loop();
     stateManager.loop();
+    relay.loop();
 
     unsigned long now = millis();
     if (now - lastHeartbeat >= WS_HEARTBEAT_INTERVAL) {

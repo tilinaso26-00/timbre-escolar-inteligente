@@ -26,6 +26,7 @@ void RelayControl::activate(unsigned long durationMs) {
     digitalWrite(pin, activeLow ? LOW : HIGH);
     state = true;
     activationStart = millis();
+    activationDuration = durationMs;
     timerActive = true;
 
     logger.info("Relé ACTIVADO por %lu ms", durationMs);
@@ -35,11 +36,17 @@ void RelayControl::deactivate() {
     digitalWrite(pin, activeLow ? HIGH : LOW);
     state = false;
     timerActive = false;
+    activationDuration = 0;
 }
 
 void RelayControl::loop() {
     if (timerActive && state) {
         unsigned long elapsed = millis() - activationStart;
+        if (elapsed >= activationDuration) {
+            deactivate();
+            logger.info("Relé apagado tras %lu ms", elapsed);
+            return;
+        }
         if (elapsed >= safetyMaxMs) {
             logger.error("¡PROTECCIÓN! Relé forzado OFF tras %lu ms", elapsed);
             deactivate();
