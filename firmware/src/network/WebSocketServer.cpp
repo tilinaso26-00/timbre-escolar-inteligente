@@ -182,8 +182,10 @@ void WebSocketServerWrapper::broadcast(const String& message) {
 void WebSocketServerWrapper::broadcastHeartbeat() {
     StaticJsonDocument<1024> doc;
     doc["event"] = "status";
-    doc["data"]["connected"] = wifiManager->isConnected();
-    doc["data"]["wifi"] = wifiManager->isConnected();
+    // "wifi" = el dispositivo es alcanzable por la app: STA conectado O sirviendo su propia red (AP).
+    bool reachable = wifiManager->isConnected() || wifiManager->isApActive();
+    doc["data"]["connected"] = reachable;
+    doc["data"]["wifi"] = reachable;
     doc["data"]["lastSync"] = stateManager ? stateManager->getLastSyncTime() : 0;
     doc["data"]["deviceTime"] = timeManager->getCurrentTimeString();
     doc["data"]["nextEvent"] = gScheduler ? gScheduler->getNextEvent() : "N/A";

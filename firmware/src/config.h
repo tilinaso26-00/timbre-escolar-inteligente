@@ -13,7 +13,9 @@
 #define BUTTON_RESET_PIN 0
 
 // Configuración relé
-#define RELAY_ACTIVE_LOW true
+// JQC-3FF-S-Z en PCB roja (módulo azul): activo en HIGH — IN HIGH = relé ON.
+// activeLow=false => apagar escribe LOW (foco/timbre apagado en reposo).
+#define RELAY_ACTIVE_LOW false
 #define RELAY_SAFETY_MAX_MS 60000
 
 // WiFi
@@ -21,7 +23,7 @@
 // operativo hay que cambiarlas y NO subirlas a ningún repositorio público.
 #define WIFI_SSID "COLEGIO_WIFI"
 #define WIFI_PASSWORD "colegio2024"
-#define WIFI_STA_ENABLED true      // unirse a la red del colegio
+#define WIFI_STA_ENABLED false     // false = solo AP estable (pruebas en casa); true = unirse a la red del colegio
 #define WIFI_AP_ALWAYS_ON true     // SIEMPRE encender su propia red
 #define WIFI_AP_MAX_CLIENTS 4      // PC + celular + margen
 #define AP_SSID "TimbreEscolar-Setup"

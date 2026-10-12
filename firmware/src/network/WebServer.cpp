@@ -89,8 +89,8 @@ void WebServerWrapper::handleStatus() {
     StaticJsonDocument<512> doc;
     doc["deviceId"] = wifiManager->getMAC();
     doc["firmwareVersion"] = FIRMWARE_VERSION;
-    doc["connected"] = wifiManager->isConnected();
-    doc["wifi"] = wifiManager->isConnected();
+    doc["connected"] = wifiManager->isConnected() || wifiManager->isApActive();
+    doc["wifi"] = wifiManager->isConnected() || wifiManager->isApActive();
     doc["ip"] = wifiManager->getIP();
     doc["rssi"] = wifiManager->getRSSI();
     doc["lastSync"] = stateManager ? stateManager->getLastSyncTime() : 0;

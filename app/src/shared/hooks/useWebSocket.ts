@@ -49,13 +49,15 @@ const WS_URL_AUTO_KEY = 'timbre.wsUrlAuto';
 const WS_TOKEN_STORAGE_KEY = 'timbre.wsToken';
 
 // Orden en que la app busca el timbre:
-// 1) nombre mDNS (funciona con cualquier IP)  2) red propia del ESP32  3) PC local
+// 1) red propia del ESP32 (IP directa — mDNS casi nunca funciona en Windows)
+// 2) nombre mDNS (por si el host lo soporta)
+// 3) PC local
 const DISCOVERY_CANDIDATES = [
-  'ws://TimbreEscolar.local:81',
   'ws://192.168.4.1:81',
+  'ws://TimbreEscolar.local:81',
   DEFAULT_WS_URL,
 ];
-const CONNECT_TIMEOUT_MS = 2500;
+const CONNECT_TIMEOUT_MS = 3500;
 const HISTORY_CHUNK_SIZE = 25;
 const HISTORY_MAX_CHUNKS = 20;
 
