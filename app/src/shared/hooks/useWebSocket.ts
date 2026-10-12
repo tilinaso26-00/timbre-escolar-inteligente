@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useToast } from '@shared/ui/Toast';
 import { eventsRepo, importDeviceHistory, normalizeBellEvent } from '@core/storage';
+import { httpGet } from '@shared/lib/deviceHttp';
 import type { BellEventLog } from '@core/schedule-engine';
 
 export interface DeviceStatus {
@@ -32,7 +33,7 @@ export interface UseWebSocketReturn {
   connected: boolean;
   deviceStatus: DeviceStatus | null;
   endpoint: string;
-  sendMessage: (event: string, data?: Record<string, unknown>) => void;
+  sendMessage: (event: string, data?: Record<string, unknown>) => boolean;
   reconnect: () => void;
 }
 
@@ -606,31 +607,80 @@ export function configureWsEndpoint(url: string, token: string): void {
 
 export function useWebSocket(url?: string): UseWebSocketReturn {
   const { addToast } = useToast();
-  const [connected, setConnected] = useState(() => bridge.getState().connected);
+  const [wsConnected, setWsConnected] = useState(() => bridge.getState().connected);
+  const [httpConnected, setHttpConnected] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(
     () => bridge.getState().deviceStatus
   );
   const [socket, setSocket] = useState<WebSocket | null>(() => bridge.getSocket());
   const [endpoint, setEndpoint] = useState<string>(() => bridge.getState().endpoint);
+  const [httpStatus, setHttpStatus] = useState<DeviceStatus | null>(null);
+
+  const connected = wsConnected || httpConnected;
+  const activeStatus = wsConnected ? deviceStatus : httpStatus ?? deviceStatus;
 
   useEffect(() => {
     const unregisterNotifier = bridge.registerNotifier(notification => addToast(notification));
     const unsubscribe = bridge.subscribe(next => {
-      setConnected(next.connected);
+      setWsConnected(next.connected);
+      if (next.connected) setHttpConnected(false);
       setDeviceStatus(next.deviceStatus);
       setSocket(bridge.getSocket());
       setEndpoint(next.endpoint);
     });
     bridge.start(url);
 
+    // Fallback HTTP: si el WebSocket no conecta, consulta el ESP32 por HTTP
+    // para mostrar estado real y poder timbrear aunque falle el WS.
+    let httpTimer: number | null = null;
+    const pollHttp = async () => {
+      if (bridge.getState().connected) {
+        setHttpConnected(false);
+        return;
+      }
+      try {
+        const status = await httpGet<Record<string, unknown>>('/api/status');
+        if (status && status.connected === true) {
+          setHttpConnected(true);
+          setHttpStatus({
+            connected: true,
+            wifi: status.wifi === true,
+            lastSync: String(status.lastSync ?? ''),
+            deviceTime: String(status.deviceTime ?? '--:--'),
+            nextEvent: null,
+            lastBell: null,
+            scheduledCount: Number(status.scheduledCount ?? 0),
+            relayState: status.relayState === true,
+            mode: String(status.mode ?? ''),
+            apSSID: String(status.apSSID ?? ''),
+            apIP: String(status.apIP ?? ''),
+            ip: String(status.ip ?? ''),
+            rssi: Number(status.rssi ?? 0),
+            staConnected: status.staConnected === true,
+            historyCount: Number(status.historyCount ?? 0),
+            uptime: Number(status.uptime ?? 0),
+            freeHeap: Number(status.freeHeap ?? 0),
+          });
+        } else {
+          setHttpConnected(false);
+          setHttpStatus(null);
+        }
+      } catch {
+        setHttpConnected(false);
+      }
+    };
+    pollHttp();
+    httpTimer = window.setInterval(pollHttp, 5000);
+
     return () => {
       unsubscribe();
       unregisterNotifier();
+      if (httpTimer !== null) window.clearInterval(httpTimer);
     };
   }, [addToast, url]);
 
-  const sendMessage = (event: string, data?: Record<string, unknown>): void => {
-    bridge.send(event, data);
+  const sendMessage = (event: string, data?: Record<string, unknown>): boolean => {
+    return bridge.send(event, data);
   };
 
   const reconnect = (): void => {
@@ -640,7 +690,7 @@ export function useWebSocket(url?: string): UseWebSocketReturn {
   return {
     socket,
     connected,
-    deviceStatus,
+    deviceStatus: activeStatus,
     endpoint,
     sendMessage,
     reconnect,

@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { useWebSocket } from './useWebSocket';
 import { useToast } from '@shared/ui/Toast';
+import { httpBell } from '@shared/lib/deviceHttp';
 import {
   journeysRepo,
   templatesRepo,
@@ -151,11 +152,13 @@ export function useSchedule() {
   };
 
   const ringManualBell = async (durationSeconds: number) => {
-    sendMessage('bell:manual', { durationSec: durationSeconds });
+    const wsOk = sendMessage('bell:manual', { durationSec: durationSeconds });
+    if (!wsOk) await httpBell(durationSeconds, false);
   };
 
   const testBell = async (durationSeconds: number) => {
-    sendMessage('bell:test', { durationSec: durationSeconds });
+    const wsOk = sendMessage('bell:test', { durationSec: durationSeconds });
+    if (!wsOk) await httpBell(durationSeconds, true);
   };
 
   const getResolvedScheduleForDate = useCallback((date: string, journey: 'matutina' | 'vespertina') => {

@@ -8,6 +8,7 @@ import { Modal } from '@shared/ui/Modal';
 import { useToast } from '@shared/ui/Toast';
 import { useSchedule } from '@shared/hooks/useSchedule';
 import { useWebSocket } from '@shared/hooks/useWebSocket';
+import { httpBell } from '@shared/lib/deviceHttp';
 
 interface DeviceConfig {
   deviceId: string;
@@ -85,7 +86,18 @@ export function DevicePage() {
 
   const handleTestBell = async (duration: number) => {
     setBellTestResult({ success: false, message: 'Enviando prueba...' });
-    sendMessage('bell:test', { durationSec: duration });
+    const wsOk = sendMessage('bell:test', { durationSec: duration });
+    if (!wsOk) {
+      // WebSocket no conecta: fallback HTTP directo al ESP32
+      const ok = await httpBell(duration, true);
+      setBellTestResult({
+        success: ok,
+        message: ok ? `Prueba de ${duration}s enviada por HTTP` : 'No se pudo contactar al timbre',
+      });
+      if (ok) addToast({ type: 'success', title: 'Timbre activado', message: `HTTP: ${duration}s` });
+      setTimeout(() => setBellTestResult(null), 3000);
+      return;
+    }
     setTimeout(() => {
       setBellTestResult({ success: true, message: `Prueba de ${duration}s enviada correctamente` });
       setTimeout(() => setBellTestResult(null), 3000);
@@ -252,7 +264,6 @@ export function DevicePage() {
                   variant="outline"
                   className="py-4"
                   onClick={() => handleTestBell(sec)}
-                  disabled={!connected}
                 >
                   <Bell className="h-6 w-6 mx-auto mb-1" />
                   <div className="font-medium">{sec} segundo{sec > 1 ? 's' : ''}</div>
@@ -261,7 +272,7 @@ export function DevicePage() {
               ))}
             </div>
             <p className="mt-4 text-sm text-gray-500">
-              {connected ? 'El timbre sonará inmediatamente en el dispositivo físico' : 'Requiere conexión al dispositivo'}
+              {connected ? 'El timbre sonará inmediatamente en el dispositivo físico' : 'Se enviará por HTTP directo (sin WebSocket)'}
             </p>
           </CardContent>
         </Card>
@@ -394,7 +405,6 @@ export function DevicePage() {
                 variant="outline"
                 className="py-3"
                 onClick={() => { handleTestBell(sec); setShowBellTestModal(false); }}
-                disabled={!connected}
               >
                 <div className="font-medium">{sec}s</div>
               </Button>
@@ -410,7 +420,7 @@ export function DevicePage() {
               className="w-24"
             />
             <span className="text-gray-500">segundos personalizados</span>
-            <Button onClick={() => { handleTestBell(testDuration); setShowBellTestModal(false); }} disabled={!connected}>
+            <Button onClick={() => { handleTestBell(testDuration); setShowBellTestModal(false); }}>
               Probar
             </Button>
           </div>

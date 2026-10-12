@@ -288,14 +288,14 @@ export function Dashboard() {
                 size="lg"
                 fullWidth
                 onClick={() => setShowManualBellModal(true)}
-                disabled={ringing || !connected}
+                disabled={ringing}
                 loading={ringing}
               >
                 <Bell className="h-5 w-5 mr-2" />
                 {ringing ? 'Sonando...' : 'HACER SONAR TIMBRE'}
               </Button>
               {!connected && (
-                <p className="text-xs text-danger-600 text-center">Requiere conexión al dispositivo</p>
+                <p className="text-xs text-warning-600 text-center">Sin WebSocket — se usará HTTP directo</p>
               )}
             </div>
           </CardContent>
