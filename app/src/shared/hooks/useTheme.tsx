@@ -15,7 +15,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('theme') as Theme | null;
       if (saved) return saved;
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      // Modo claro por defecto: el usuario puede cambiarlo con el botón 🌙/☀️
+      return 'light';
     }
     return 'light';
   });

@@ -76,15 +76,15 @@ function buildCandidates(): string[] {
   const manual = storedWsUrl();
   if (manual) return [manual];
 
-  const ordered: string[] = [];
+  // Los candidatos fijos SIEMPRE van primero (192.168.4.1 antes que mDNS).
+  // La URL auto-guardada solo se agrega al final como hint, nunca priorizada:
+  // una versión vieja pudo haber guardado mDNS y quedarse en un loop muerto.
+  const ordered: string[] = [...DISCOVERY_CANDIDATES];
   try {
     const auto = localStorage.getItem(WS_URL_AUTO_KEY);
-    if (auto) ordered.push(auto);
+    if (auto && !ordered.includes(auto)) ordered.push(auto);
   } catch {
     /* localStorage no disponible */
-  }
-  for (const candidate of DISCOVERY_CANDIDATES) {
-    if (!ordered.includes(candidate)) ordered.push(candidate);
   }
   return ordered;
 }
