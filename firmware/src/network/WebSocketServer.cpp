@@ -44,11 +44,19 @@ void WebSocketServerWrapper::onEvent(uint8_t num, WStype_t type, uint8_t* payloa
             break;
         }
         case WStype_TEXT: {
-            String msg = String((char*)payload);
-            logger->debug("WS Mensaje recibido: %s", msg.c_str());
+            if (!payload || length == 0) {
+                logger->warn("WS mensaje vacío");
+                return;
+            }
 
-            StaticJsonDocument<8192> doc;
-            DeserializationError error = deserializeJson(doc, msg);
+            // Zero-copy: parsear directo del buffer del cliente (mutable, ya
+            // terminado en NUL por la lib). Antes se copiaba a String y luego
+            // ArduinoJson volvía a copiar todo al pool: con un sync de ~25 KB
+            // eso agotaba el heap y deserializeJson devolvía NoMemory.
+            // Todo el procesamiento ocurre dentro de este handler, así que
+            // ningún puntero de `doc` sobrevive a free(payload).
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, (char*)payload, length);
             if (error) {
                 logger->warn("WS JSON inválido: %s", error.c_str());
                 return;
@@ -70,13 +78,13 @@ void WebSocketServerWrapper::onEvent(uint8_t num, WStype_t type, uint8_t* payloa
             if (!event) return;
 
             if (strcmp(event, "sync:request") == 0) {
-                JsonObject data = doc["data"].as<JsonObject>();
-                if (!data.isNull()) {
+                JsonVariant data = doc["data"];
+                if (data.is<JsonObject>()) {
                     logger->info("Sync request recibido vía WebSocket");
-                    JsonDocument syncDoc;
-                    syncDoc.set(data);
-                    stateManager->handleFullSync(syncDoc);
-                    String hash = SyncProtocol::calculateHash(syncDoc);
+                    // Sin copia: handleFullSync lee directo del subárbol "data"
+                    // (doc es zero-copy y vive durante todo este handler).
+                    stateManager->handleFullSync(data);
+                    String hash = SyncProtocol::calculateHash(data);
                     int version = data["version"] | 0;
 
                     StaticJsonDocument<256> resp;

@@ -8,10 +8,10 @@ bool SyncProtocol::parseAndStore(JsonDocument& doc, ScheduleStore* store) {
         return false;
     }
 
-    return store->saveFullSync(doc);
+    return store->saveFullSync(doc.as<JsonVariantConst>());
 }
 
-String SyncProtocol::calculateHash(JsonDocument& doc) {
+String SyncProtocol::calculateHash(JsonVariantConst doc) {
     String jsonStr;
     serializeJson(doc, jsonStr);
 

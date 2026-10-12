@@ -38,6 +38,16 @@ bool WebServerWrapper::requireAuth() {
 }
 
 void WebServerWrapper::setupRoutes() {
+    // Preflight CORS: toda petición de la app lleva Authorization, así que el
+    // navegador siempre manda OPTIONS antes del GET/POST real.
+    const char* apiPaths[] = {
+        "/api/status", "/api/schedule", "/api/config", "/api/bell/manual",
+        "/api/bell/test", "/api/logs", "/api/history", "/api/reboot", "/api/factory-reset"
+    };
+    for (const char* path : apiPaths) {
+        server.on(path, HTTP_OPTIONS, [this]() { handleOptions(); });
+    }
+
     server.on("/api/status", HTTP_GET, [this]() { 
         if (requireAuth()) handleStatus(); 
     });
@@ -73,15 +83,35 @@ void WebServerWrapper::setupRoutes() {
     });
 
     server.onNotFound([this]() {
+        if (server.method() == HTTP_OPTIONS) {
+            handleOptions();
+            return;
+        }
         StaticJsonDocument<256> doc;
         doc["error"] = "Not found";
         sendJSON(404, doc);
     });
 }
 
+// El WebView de la app corre en http://tauri.localhost: sin estas cabeceras el
+// navegador bloquea cualquier fetch al ESP32 por CORS (el fallback HTTP
+// del estado/timbre manual moría con "No Access-Control-Allow-Origin").
+void WebServerWrapper::corsHeaders() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+}
+
+void WebServerWrapper::handleOptions() {
+    corsHeaders();
+    server.sendHeader("Access-Control-Max-Age", "86400");
+    server.send(204, "text/plain", "");
+}
+
 void WebServerWrapper::sendJSON(int code, JsonDocument& doc) {
     String output;
     serializeJson(doc, output);
+    corsHeaders();
     server.send(code, "application/json", output);
 }
 
@@ -112,7 +142,7 @@ void WebServerWrapper::handleStatus() {
 }
 
 void WebServerWrapper::handleScheduleGet() {
-    StaticJsonDocument<8192> doc;
+    JsonDocument doc;
     int count;
     ScheduleEvent* events = scheduleStore->getEvents(count);
 
@@ -181,7 +211,8 @@ void WebServerWrapper::handleSchedulePost() {
         return;
     }
 
-    StaticJsonDocument<8192> doc;
+    // Heap: el payload de sync supera los 8 KB del StaticJsonDocument viejo
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, server.arg("plain"));
     if (error) {
         StaticJsonDocument<256> errDoc;
@@ -191,9 +222,9 @@ void WebServerWrapper::handleSchedulePost() {
     }
 
     if (stateManager) {
-        stateManager->handleFullSync(doc);
+        stateManager->handleFullSync(doc.as<JsonVariantConst>());
     } else if (scheduleStore) {
-        scheduleStore->saveFullSync(doc);
+        scheduleStore->saveFullSync(doc.as<JsonVariantConst>());
     }
 
     StaticJsonDocument<256> resp;

@@ -30,6 +30,8 @@ public:
 
 private:
     void setupRoutes();
+    void corsHeaders();
+    void handleOptions();
     bool requireAuth();
     void handleStatus();
     void handleScheduleGet();

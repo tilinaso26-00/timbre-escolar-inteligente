@@ -31,7 +31,10 @@ void StateManager::onSyncComplete(int version, const String& hash) {
     logger->info("Sync completado v%d hash=%s", version, hash.c_str());
 }
 
-void StateManager::handleFullSync(JsonDocument& doc) {
+// Acepta un JsonVariantConst (raíz HTTP o subárbol "data" del WebSocket) para
+// no tener que copiar el sync completo (~25 KB) en otro JsonDocument: esa copia
+// agotaba el heap y el sync se perdía con NoMemory.
+void StateManager::handleFullSync(JsonVariantConst doc) {
     logger->info("Procesando sync completo v%d", doc["version"] | 0);
 
     if (scheduleStore && scheduleStore->saveFullSync(doc)) {
@@ -40,15 +43,15 @@ void StateManager::handleFullSync(JsonDocument& doc) {
         onSyncComplete(version, hash);
 
         // Update device config if present
-        if (doc["deviceConfig"].is<JsonObject>()) {
-            applyDeviceConfig(doc["deviceConfig"]);
+        if (doc["deviceConfig"].is<JsonObjectConst>()) {
+            applyDeviceConfig(doc["deviceConfig"].as<JsonObjectConst>());
         }
     } else {
         logger->error("Error procesando sync completo");
     }
 }
 
-void StateManager::applyDeviceConfig(JsonObject config) {
+void StateManager::applyDeviceConfig(JsonObjectConst config) {
     if (timeManager && config["timezone"].is<const char*>()) {
         // Timezone would require NTP restart, log for now
         logger->info("Config timezone: %s", config["timezone"].as<const char*>());

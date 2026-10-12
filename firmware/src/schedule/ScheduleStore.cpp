@@ -13,37 +13,36 @@ ScheduleStore::~ScheduleStore() {
 
 void ScheduleStore::ensureCapacity() {
     if (eventCount >= capacity) {
-        capacity = capacity == 0 ? 16 : capacity * 2;
-        ScheduleEvent* newEvents = new ScheduleEvent[capacity];
-        if (events) {
-            memcpy(newEvents, events, eventCount * sizeof(ScheduleEvent));
-            delete[] events;
-        }
+        // Copia elemento a elemento: memcpy sobre structs con String y luego
+        // delete[] (que llama ~String) dejaba los punteros nuevos colgando.
+        int newCapacity = capacity == 0 ? 16 : capacity * 2;
+        ScheduleEvent* newEvents = new ScheduleEvent[newCapacity];
+        for (int i = 0; i < eventCount; i++) newEvents[i] = events[i];
+        if (events) delete[] events;
         events = newEvents;
+        capacity = newCapacity;
     }
 }
 
 void ScheduleStore::ensureTemplateCapacity() {
     if (templateCount >= templateCapacity) {
-        templateCapacity = templateCapacity == 0 ? 8 : templateCapacity * 2;
-        ScheduleTemplate* newTemplates = new ScheduleTemplate[templateCapacity];
-        if (templates) {
-            memcpy(newTemplates, templates, templateCount * sizeof(ScheduleTemplate));
-            delete[] templates;
-        }
+        int newCapacity = templateCapacity == 0 ? 8 : templateCapacity * 2;
+        ScheduleTemplate* newTemplates = new ScheduleTemplate[newCapacity];
+        for (int i = 0; i < templateCount; i++) newTemplates[i] = templates[i];
+        if (templates) delete[] templates;
         templates = newTemplates;
+        templateCapacity = newCapacity;
     }
 }
 
 void ScheduleStore::ensureExceptionCapacity() {
     if (exceptionCount >= exceptionCapacity) {
-        exceptionCapacity = exceptionCapacity == 0 ? 8 : exceptionCapacity * 2;
-        CalendarException* newExceptions = new CalendarException[exceptionCapacity];
-        if (exceptions) {
-            memcpy(newExceptions, exceptions, exceptionCount * sizeof(CalendarException));
-            delete[] exceptions;
-        }
+        int newCapacity = exceptionCapacity == 0 ? 8 : exceptionCapacity * 2;
+        CalendarException* newExceptions = new CalendarException[newCapacity];
+        for (int i = 0; i < exceptionCount; i++) newExceptions[i] = exceptions[i];
+        if (exceptions) delete[] exceptions;
         exceptions = newExceptions;
+        exceptionCapacity = newCapacity;
     }
 }
 
@@ -64,7 +63,9 @@ bool ScheduleStore::loadSchedule() {
         return false;
     }
 
-    StaticJsonDocument<8192> doc;
+    // JsonDocument (heap): el horario completo supera con creces los 8 KB del
+    // StaticJsonDocument viejo y el parseo fallaba en silencio.
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
@@ -73,18 +74,18 @@ bool ScheduleStore::loadSchedule() {
         return false;
     }
 
-    return saveSchedule(doc);
+    return saveSchedule(doc.as<JsonVariantConst>());
 }
 
-bool ScheduleStore::saveSchedule(JsonDocument& doc) {
+bool ScheduleStore::saveSchedule(JsonVariantConst doc) {
     clear();
 
-    JsonArray journeys = doc["journeys"].as<JsonArray>();
-    for (JsonObject journey : journeys) {
+    JsonArrayConst journeys = doc["journeys"].as<JsonArrayConst>();
+    for (JsonObjectConst journey : journeys) {
         const char* journeyName = journey["journey"];
-        JsonArray eventsArray = journey["events"].as<JsonArray>();
+        JsonArrayConst eventsArray = journey["events"].as<JsonArrayConst>();
 
-        for (JsonObject evt : eventsArray) {
+        for (JsonObjectConst evt : eventsArray) {
             ScheduleEvent e;
             e.id = evt["id"].as<String>();
             e.name = evt["name"].as<String>();
@@ -96,7 +97,7 @@ bool ScheduleStore::saveSchedule(JsonDocument& doc) {
             e.bellDurationSec = evt["bellDurationSeconds"];
             e.type = evt["type"].as<String>();
             e.journey = evt["journey"].as<String>();
-            e.activeDays = evt["activeDays"].as<uint8_t>();
+            e.activeDays = parseActiveDays(evt["activeDays"]);
             e.isFixed = evt["isFixed"] | false;
             e.periodIndex = evt["periodIndex"] | 0;
 
@@ -161,7 +162,7 @@ bool ScheduleStore::loadTemplates() {
         return false;
     }
 
-    StaticJsonDocument<8192> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
@@ -170,15 +171,15 @@ bool ScheduleStore::loadTemplates() {
         return false;
     }
 
-    return saveTemplates(doc);
+    return saveTemplates(doc.as<JsonVariantConst>());
 }
 
-bool ScheduleStore::saveTemplates(JsonDocument& doc) {
+bool ScheduleStore::saveTemplates(JsonVariantConst doc) {
     clearTemplates();
 
-    JsonArray tmplArray = doc["templates"].as<JsonArray>();
+    JsonArrayConst tmplArray = doc["templates"].as<JsonArrayConst>();
     if (!tmplArray.isNull()) {
-        for (JsonObject tmpl : tmplArray) {
+        for (JsonObjectConst tmpl : tmplArray) {
             ScheduleTemplate t;
             t.id = tmpl["id"].as<String>();
             t.name = tmpl["name"].as<String>();
@@ -252,7 +253,7 @@ bool ScheduleStore::loadExceptions() {
         return false;
     }
 
-    StaticJsonDocument<8192> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
@@ -261,15 +262,15 @@ bool ScheduleStore::loadExceptions() {
         return false;
     }
 
-    return saveExceptions(doc);
+    return saveExceptions(doc.as<JsonVariantConst>());
 }
 
-bool ScheduleStore::saveExceptions(JsonDocument& doc) {
+bool ScheduleStore::saveExceptions(JsonVariantConst doc) {
     clearExceptions();
 
-    JsonArray excArray = doc["exceptions"].as<JsonArray>();
+    JsonArrayConst excArray = doc["exceptions"].as<JsonArrayConst>();
     if (!excArray.isNull()) {
-        for (JsonObject exc : excArray) {
+        for (JsonObjectConst exc : excArray) {
             CalendarException e;
             e.id = exc["id"].as<String>();
             e.date = exc["date"].as<String>();
@@ -278,7 +279,15 @@ bool ScheduleStore::saveExceptions(JsonDocument& doc) {
             e.scheduleId = exc["scheduleId"] | "";
             e.name = exc["name"].as<String>();
             e.description = exc["description"] | "";
-            e.customEventsJson = exc["customEvents"] | "";
+            // customEvents es un array: serializarlo (igual que las plantillas)
+            // en vez de `| ""`, que descartaba todos los eventos custom.
+            if (exc["customEvents"].is<JsonArrayConst>()) {
+                String customJson;
+                serializeJson(exc["customEvents"], customJson);
+                e.customEventsJson = customJson;
+            } else {
+                e.customEventsJson = "";
+            }
             e.createdAt = exc["createdAt"] | "";
 
             addException(e);
@@ -347,12 +356,40 @@ String ScheduleStore::getSyncHash() {
     return lastSyncHash;
 }
 
-bool ScheduleStore::saveFullSync(JsonDocument& doc) {
+void ScheduleStore::setChangeNotifier(std::function<void()> fn) {
+    changeNotifier = fn;
+}
+
+// Escribe {"<key>": <valor>} en LittleFS serializando directo al archivo
+// (sin copiar el array a otro documento: con ~25 KB de horario no cabe en RAM).
+static bool writeWrappedJson(const char* path, const char* key, JsonVariantConst value) {
+    File file = LittleFS.open(path, "w");
+    if (!file) {
+        logger.error("No se pudo abrir %s para escritura", path);
+        return false;
+    }
+    file.print("{\"");
+    file.print(key);
+    file.print("\":");
+    serializeJson(value, file);
+    file.print("}");
+    file.close();
+    return true;
+}
+
+bool ScheduleStore::saveFullSync(JsonVariantConst doc) {
+    if (!doc["journeys"].is<JsonArrayConst>()) {
+        logger.error("Sync sin array 'journeys': ignorado");
+        return false;
+    }
+
     int version = doc["version"] | 0;
     String hash = SyncProtocol::calculateHash(doc);
 
-    if (version <= lastSyncVersion && hash == lastSyncHash) {
-        logger.info("Sync duplicado, ignorando");
+    // Dedupe por contenido: si el hash no cambia no hay nada que recargar ni
+    // que volver a escribir en flash (la app manda version=Date.now() siempre).
+    if (hash == lastSyncHash && lastSyncVersion != 0) {
+        logger.info("Sync duplicado (mismo contenido), ignorando");
         return true;
     }
 
@@ -361,8 +398,22 @@ bool ScheduleStore::saveFullSync(JsonDocument& doc) {
     bool exceptionsOk = saveExceptions(doc);
 
     if (scheduleOk && templatesOk && exceptionsOk) {
+        // Persistir: sin esto, loadSchedule/loadTemplates/loadExceptions leen
+        // archivos que nunca se escribían y el horario se perdía al reiniciar.
+        bool persistOk = writeWrappedJson(SCHEDULE_FILE, "journeys", doc["journeys"]) &&
+                         writeWrappedJson(TEMPLATES_FILE, "templates", doc["templates"]) &&
+                         writeWrappedJson(EXCEPTIONS_FILE, "exceptions", doc["exceptions"]);
+
+        if (!persistOk) {
+            logger.error("Sync aplicado en RAM pero no persistido en LittleFS");
+            return false;
+        }
+
         setSyncMetadata(version, hash);
-        logger.info("Sync completo guardado v%d hash=%s", version, hash.c_str());
+        logger.info("Sync completo guardado y persistido v%d hash=%s eventos=%d",
+                    version, hash.c_str(), eventCount);
+
+        if (changeNotifier) changeNotifier();
         return true;
     }
 

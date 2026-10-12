@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { useWebSocket } from './useWebSocket';
 import { useToast } from '@shared/ui/Toast';
-import { httpBell } from '@shared/lib/deviceHttp';
+import { httpBell, httpPost } from '@shared/lib/deviceHttp';
 import {
   journeysRepo,
   templatesRepo,
@@ -147,9 +147,41 @@ export function useSchedule() {
       deviceConfig: config[0] || {}
     };
 
-    sendMessage('sync:request', payload);
-    return true;
+    // WebSocket primero; si no conecta, el ESP32 acepta el mismo sync por HTTP.
+    if (sendMessage('sync:request', payload)) return true;
+
+    const res = await httpPost<{ status?: string }>('/api/schedule', payload);
+    return res !== null && res.status === 'ok';
   };
+
+  // Siempre usar la última versión de syncToDevice (se recrea en cada render)
+  const syncFnRef = useRef(syncToDevice);
+  syncFnRef.current = syncToDevice;
+
+  // Primer contacto con el dispositivo: se envía el horario solo, para que los
+  // timbres programados funcionen sin apretar "Sincronizar". El ESP32 ignora el
+  // sync si el contenido no cambió (dedupe por hash), así que esto no satura la flash.
+  const autoSyncedRef = useRef(false);
+  useEffect(() => {
+    if (!connected || loading || autoSyncedRef.current) return;
+    let cancelled = false;
+
+    const attempt = async () => {
+      if (cancelled || autoSyncedRef.current) return;
+      const ok = await syncFnRef.current();
+      if (ok && !cancelled) {
+        autoSyncedRef.current = true;
+        console.info('[sync] Horario enviado al dispositivo automáticamente');
+      }
+    };
+
+    void attempt();
+    const id = window.setInterval(attempt, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [connected, loading]);
 
   const ringManualBell = async (durationSeconds: number) => {
     const wsOk = sendMessage('bell:manual', { durationSec: durationSeconds });

@@ -8,7 +8,7 @@
 class SyncProtocol {
 public:
     static bool parseAndStore(JsonDocument& doc, ScheduleStore* store);
-    static String calculateHash(JsonDocument& doc);
+    static String calculateHash(JsonVariantConst doc);
     static bool validateVersion(JsonDocument& doc, int currentVersion);
 };
 

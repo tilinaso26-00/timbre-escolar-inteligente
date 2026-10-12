@@ -2,6 +2,10 @@
 #include "config.h"
 #include <ArduinoJson.h>
 
+// 0 = matutina, 1 = vespertina, -1 = jornada desconocida
+static int journeyIndex(const String& journey);
+static bool templateAppliesOnDay(const String& eventsJson, int dayOfWeek);
+
 Scheduler::Scheduler()
     : scheduleStore(nullptr), timeManager(nullptr), relay(nullptr), logger(nullptr),
       resolvedEvents(nullptr), resolvedCount(0), resolvedCapacity(0) {}
@@ -10,6 +14,9 @@ Scheduler::~Scheduler() {
     if (resolvedEvents) {
         delete[] resolvedEvents;
     }
+    if (overrideEvents) {
+        delete[] overrideEvents;
+    }
 }
 
 void Scheduler::ensureResolvedCapacity(int needed) {
@@ -17,11 +24,31 @@ void Scheduler::ensureResolvedCapacity(int needed) {
         resolvedCapacity = needed + 8;
         ResolvedEvent* newEvents = new ResolvedEvent[resolvedCapacity];
         if (resolvedEvents) {
-            memcpy(newEvents, resolvedEvents, resolvedCount * sizeof(ResolvedEvent));
+            for (int i = 0; i < resolvedCount; i++) newEvents[i] = resolvedEvents[i];
             delete[] resolvedEvents;
         }
         resolvedEvents = newEvents;
     }
+}
+
+void Scheduler::ensureOverrideCapacity(int needed) {
+    if (needed >= overrideCapacity) {
+        int newCapacity = overrideCapacity == 0 ? 16 : overrideCapacity * 2;
+        if (newCapacity < needed) newCapacity = needed;
+        ScheduleEvent* newEvents = new ScheduleEvent[newCapacity];
+        for (int i = 0; i < overrideCount; i++) newEvents[i] = overrideEvents[i];
+        if (overrideEvents) delete[] overrideEvents;
+        overrideEvents = newEvents;
+        overrideCapacity = newCapacity;
+    }
+}
+
+void Scheduler::addResolvedEvent(ScheduleEvent* event, int dayOfWeek) {
+    ensureResolvedCapacity(resolvedCount + 1);
+    resolvedEvents[resolvedCount].event = event;
+    resolvedEvents[resolvedCount].dayOfWeek = dayOfWeek;
+    resolvedEvents[resolvedCount].bellMinutes = event->bellHour * 60 + event->bellMin;
+    resolvedCount++;
 }
 
 void Scheduler::init(ScheduleStore* store, TimeManager* tm, RelayControl* r, Logger* log) {
@@ -42,164 +69,75 @@ void Scheduler::rebuildResolvedSchedule() {
     if (!scheduleStore || !timeManager->isTimeValid()) return;
 
     String today = timeManager->getCurrentDateString();
-    if (today == lastResolvedDate && resolvedCount > 0) return;
+    if (today == lastResolvedDate) return;
+
+    struct tm now = timeManager->getCurrentTimeStruct();
+    int dayOfWeek = now.tm_wday;
 
     lastResolvedDate = today;
-
-    int dayOfWeek = 0;
-    struct tm now = timeManager->getCurrentTimeStruct();
-    dayOfWeek = now.tm_wday;
-
     resolvedCount = 0;
+    overrideCount = 0;
 
-    int eventCount;
-    ScheduleEvent* events = scheduleStore->getEvents(eventCount);
-
-    int templateCount;
+    int eventCount = 0;
+    ScheduleEvent* baseEvents = scheduleStore->getEvents(eventCount);
+    int templateCount = 0;
     ScheduleTemplate* templates = scheduleStore->getTemplates(templateCount);
-
-    int exceptionCount;
+    int exceptionCount = 0;
     CalendarException* exceptions = scheduleStore->getExceptions(exceptionCount);
 
-    CalendarException* dateException = nullptr;
-    CalendarException* bestTemplateException = nullptr;
-
-    for (int i = 0; i < exceptionCount; i++) {
-        CalendarException* exc = &exceptions[i];
-        if (exc->date == today) {
-            if (exc->type == "no_classes") {
-                dateException = exc;
-                break;
-            }
-            if (exc->type == "custom" && exc->customEventsJson.length() > 0) {
-                dateException = exc;
-                break;
-            }
-            if (exc->type == "schedule" && exc->scheduleId.length() > 0) {
-                if (!bestTemplateException) bestTemplateException = exc;
-            }
-        }
+    const char* journeyNames[2] = {"matutina", "vespertina"};
+    int baseCountByJourney[2] = {0, 0};
+    for (int i = 0; i < eventCount; i++) {
+        int j = journeyIndex(baseEvents[i].journey);
+        if (j >= 0) baseCountByJourney[j]++;
     }
 
-    if (dateException && dateException->type == "no_classes") {
-        logger->info("Hoy %s: Sin clases (excepción no_classes)", today.c_str());
-        resolvedCount = 0;
-        return;
-    }
-
-    ScheduleTemplate* selectedTemplate = nullptr;
-
-    if (dateException && dateException->type == "custom") {
-        logger->info("Hoy %s: Horario custom (excepción)", today.c_str());
-    } else if (dateException && dateException->type == "schedule") {
-        for (int i = 0; i < templateCount; i++) {
-            if (templates[i].id == dateException->scheduleId) {
-                selectedTemplate = &templates[i];
-                break;
-            }
-        }
-        logger->info("Hoy %s: Plantilla de excepción %s", today.c_str(), selectedTemplate ? selectedTemplate->name.c_str() : "no encontrada");
-    } else {
-        for (int i = 0; i < templateCount; i++) {
-            if (templates[i].journey == "matutina" || templates[i].journey == "vespertina") {
-                StaticJsonDocument<1024> doc;
-                deserializeJson(doc, templates[i].eventsJson);
-                JsonArray tmplEvents = doc.as<JsonArray>();
-                for (JsonObject tmplEvt : tmplEvents) {
-                    JsonArray activeDays = tmplEvt["activeDays"].as<JsonArray>();
-                    for (JsonVariant day : activeDays) {
-                        if (day.as<int>() == dayOfWeek) {
-                            if (!selectedTemplate) selectedTemplate = &templates[i];
-                        }
-                    }
+    // 1) Excepciones de hoy por jornada (fecha + jornada, igual que la app).
+    //    Sustituyen SOLO al horario de su jornada: la otra jornada sigue normal.
+    //    Antes una excepción mataba los timbres de las dos jornadas del día.
+    bool overridesBase[2] = {false, false};
+    for (int j = 0; j < 2; j++) {
+        for (int i = 0; i < exceptionCount; i++) {
+            CalendarException* exc = &exceptions[i];
+            if (exc->date == today && exc->journey == journeyNames[j]) {
+                overridesBase[j] = loadExceptionEvents(exc, today, dayOfWeek);
+                if (!overridesBase[j]) {
+                    logger->info("Hoy %s: excepción de %s no aporta eventos, uso horario base",
+                                 today.c_str(), journeyNames[j]);
                 }
-            }
-        }
-        if (selectedTemplate) {
-            logger->info("Hoy %s: Plantilla por día %s", today.c_str(), selectedTemplate->name.c_str());
-        }
-    }
-
-    ScheduleEvent* sourceEvents = nullptr;
-    int sourceCount = 0;
-    bool isCustomException = false;
-    String customEventsJson = "";
-
-    if (dateException && dateException->type == "custom" && dateException->customEventsJson.length() > 0) {
-        isCustomException = true;
-        customEventsJson = dateException->customEventsJson;
-    } else if (selectedTemplate) {
-        sourceEvents = (ScheduleEvent*)malloc(sizeof(ScheduleEvent) * 64);
-        sourceCount = 0;
-        StaticJsonDocument<4096> doc;
-        deserializeJson(doc, selectedTemplate->eventsJson);
-        JsonArray tmplEvents = doc.as<JsonArray>();
-        for (JsonObject tmplEvt : tmplEvents) {
-            if (sourceCount >= 64) break;
-            ScheduleEvent e;
-            e.id = tmplEvt["id"] | "";
-            e.name = tmplEvt["name"].as<String>();
-            e.startHour = tmplEvt["startTime"]["hours"];
-            e.startMin = tmplEvt["startTime"]["minutes"];
-            e.durationMin = tmplEvt["durationMinutes"];
-            e.bellHour = tmplEvt["bellTime"]["hours"];
-            e.bellMin = tmplEvt["bellTime"]["minutes"];
-            e.bellDurationSec = tmplEvt["bellDurationSeconds"];
-            e.type = tmplEvt["type"].as<String>();
-            e.journey = tmplEvt["journey"].as<String>();
-            e.activeDays = tmplEvt["activeDays"].as<uint8_t>();
-            e.isFixed = tmplEvt["isFixed"] | false;
-            e.periodIndex = tmplEvt["periodIndex"] | 0;
-            sourceEvents[sourceCount++] = e;
-        }
-    } else {
-        sourceEvents = events;
-        sourceCount = eventCount;
-    }
-
-    if (isCustomException) {
-        StaticJsonDocument<4096> doc;
-        deserializeJson(doc, customEventsJson);
-        JsonArray customEvents = doc.as<JsonArray>();
-        for (JsonObject tmplEvt : customEvents) {
-            if (resolvedCount >= 64) break;
-            ScheduleEvent e;
-            e.id = tmplEvt["id"] | "";
-            e.name = tmplEvt["name"].as<String>();
-            e.startHour = tmplEvt["startTime"]["hours"];
-            e.startMin = tmplEvt["startTime"]["minutes"];
-            e.durationMin = tmplEvt["durationMinutes"];
-            e.bellHour = tmplEvt["bellTime"]["hours"];
-            e.bellMin = tmplEvt["bellTime"]["minutes"];
-            e.bellDurationSec = tmplEvt["bellDurationSeconds"];
-            e.type = tmplEvt["type"].as<String>();
-            e.journey = tmplEvt["journey"].as<String>();
-            e.activeDays = tmplEvt["activeDays"].as<uint8_t>();
-            e.isFixed = tmplEvt["isFixed"] | false;
-            e.periodIndex = tmplEvt["periodIndex"] | 0;
-
-            if (e.activeDays & (1 << dayOfWeek)) {
-                ensureResolvedCapacity(resolvedCount + 1);
-                resolvedEvents[resolvedCount] = {nullptr, dayOfWeek, e.bellHour * 60 + e.bellMin};
-                resolvedEvents[resolvedCount].event = new ScheduleEvent(e);
-                resolvedCount++;
-            }
-        }
-    } else {
-        for (int i = 0; i < sourceCount; i++) {
-            ScheduleEvent* e = &sourceEvents[i];
-            if (e->activeDays & (1 << dayOfWeek)) {
-                ensureResolvedCapacity(resolvedCount + 1);
-                resolvedEvents[resolvedCount] = {e, dayOfWeek, e->bellHour * 60 + e->bellMin};
-                resolvedCount++;
+                break;
             }
         }
     }
 
-    if (sourceEvents != events && sourceEvents != nullptr) {
-        free(sourceEvents);
+    //    Sin horario base para la jornada → plantilla que aplique hoy
+    for (int j = 0; j < 2; j++) {
+        if (overridesBase[j] || baseCountByJourney[j] > 0) continue;
+        for (int i = 0; i < templateCount; i++) {
+            if (templates[i].journey != journeyNames[j]) continue;
+            if (!templateAppliesOnDay(templates[i].eventsJson, dayOfWeek)) continue;
+            logger->info("Hoy %s: %s usa plantilla por día '%s'", today.c_str(),
+                         journeyNames[j], templates[i].name.c_str());
+            appendEventsFromJson(templates[i].eventsJson, dayOfWeek);
+            break;
+        }
     }
 
+    // 2) Horario base de cada jornada, filtrado por el día de la semana.
+    for (int i = 0; i < eventCount; i++) {
+        ScheduleEvent* e = &baseEvents[i];
+        int j = journeyIndex(e->journey);
+        if (j >= 0 && overridesBase[j]) continue;
+        if (isEventActiveToday(e, dayOfWeek)) addResolvedEvent(e, dayOfWeek);
+    }
+
+    // 3) Eventos de excepciones/plantillas ya parseados. Aquí overrideEvents ya
+    //    no crece, así que los punteros anteriores siguen siendo válidos.
+    for (int i = 0; i < overrideCount; i++) {
+        addResolvedEvent(&overrideEvents[i], dayOfWeek);
+    }
+
+    // Orden por hora de timbre
     for (int i = 0; i < resolvedCount - 1; i++) {
         for (int j = i + 1; j < resolvedCount; j++) {
             if (resolvedEvents[i].bellMinutes > resolvedEvents[j].bellMinutes) {
@@ -210,7 +148,88 @@ void Scheduler::rebuildResolvedSchedule() {
         }
     }
 
-    logger->info("Scheduler rebuilt for %s: %d eventos resueltos (journey: %s)", today.c_str(), resolvedCount, selectedTemplate ? selectedTemplate->journey.c_str() : "base");
+    logger->info("Scheduler rebuilt for %s: %d eventos resueltos", today.c_str(), resolvedCount);
+}
+
+// Devuelve 0 para matutina, 1 para vespertina y -1 si la jornada es desconocida.
+static int journeyIndex(const String& journey) {
+    if (journey == "matutina") return 0;
+    if (journey == "vespertina") return 1;
+    return -1;
+}
+
+static bool templateAppliesOnDay(const String& eventsJson, int dayOfWeek) {
+    JsonDocument doc;
+    if (deserializeJson(doc, eventsJson)) return false;
+    for (JsonObject evt : doc.as<JsonArray>()) {
+        if (parseActiveDays(evt["activeDays"]) & (1 << dayOfWeek)) return true;
+    }
+    return false;
+}
+
+// Convierte los eventos JSON de una excepción/plantilla en eventos propios.
+// Se filtra por el día de la semana: es la misma regla que usa la aplicación
+// al mostrar "Hoy" (useSchedule.ts filtra por activeDays.includes(today)).
+void Scheduler::appendEventsFromJson(const String& json, int dayOfWeek) {
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, json);
+    if (err) {
+        logger->warn("Eventos ilegibles en JSON: %s", err.c_str());
+        return;
+    }
+
+    for (JsonObject evt : doc.as<JsonArray>()) {
+        ScheduleEvent e;
+        e.id = evt["id"] | "";
+        e.name = evt["name"].as<String>();
+        e.startHour = evt["startTime"]["hours"] | 0;
+        e.startMin = evt["startTime"]["minutes"] | 0;
+        e.durationMin = evt["durationMinutes"] | 0;
+        e.bellHour = evt["bellTime"]["hours"] | 0;
+        e.bellMin = evt["bellTime"]["minutes"] | 0;
+        e.bellDurationSec = evt["bellDurationSeconds"] | 3;
+        e.type = evt["type"].as<String>();
+        e.journey = evt["journey"].as<String>();
+        e.activeDays = parseActiveDays(evt["activeDays"]);
+        e.isFixed = evt["isFixed"] | false;
+        e.periodIndex = evt["periodIndex"] | 0;
+
+        if (!(e.activeDays & (1 << dayOfWeek))) continue;
+
+        ensureOverrideCapacity(overrideCount + 1);
+        overrideEvents[overrideCount++] = e;
+    }
+}
+
+// Devuelve true si la excepción sustituye al horario base de su jornada.
+bool Scheduler::loadExceptionEvents(CalendarException* exc, const String& today, int dayOfWeek) {
+    if (!exc) return false;
+
+    if (exc->type == "no_classes") {
+        logger->info("Hoy %s: jornada %s sin clases (excepción)", today.c_str(), exc->journey.c_str());
+        return true;
+    }
+
+    if (exc->type == "schedule" && exc->scheduleId.length() > 0) {
+        ScheduleTemplate* tmpl = scheduleStore->findTemplateById(exc->scheduleId);
+        if (!tmpl) {
+            logger->warn("Plantilla %s de la excepción no encontrada", exc->scheduleId.c_str());
+            return false;
+        }
+        logger->info("Hoy %s: jornada %s usa plantilla '%s'", today.c_str(),
+                     exc->journey.c_str(), tmpl->name.c_str());
+        appendEventsFromJson(tmpl->eventsJson, dayOfWeek);
+        return true;
+    }
+
+    if (exc->type == "custom" && exc->customEventsJson.length() > 0) {
+        logger->info("Hoy %s: jornada %s usa eventos custom de excepción",
+                     today.c_str(), exc->journey.c_str());
+        appendEventsFromJson(exc->customEventsJson, dayOfWeek);
+        return true;
+    }
+
+    return false;
 }
 
 bool Scheduler::isEventActiveToday(ScheduleEvent* event, int dayOfWeek) {
@@ -347,4 +366,8 @@ String Scheduler::getLastBellTime() {
 
 String Scheduler::getLastExecutedEvent() {
     return lastExecutedEvent;
+}
+
+int Scheduler::getResolvedCount() {
+    return resolvedCount;
 }

@@ -17,14 +17,14 @@ private:
     int currentVersion = 0;
     String currentHash = "";
 
-    void applyDeviceConfig(JsonObject config);
+    void applyDeviceConfig(JsonObjectConst config);
 
 public:
     StateManager();
     void init(ScheduleStore* ss, TimeManager* tm, WiFiManager* wm, Logger* log);
     void loop();
     void onSyncReceived(JsonDocument& doc);
-    void handleFullSync(JsonDocument& doc);
+    void handleFullSync(JsonVariantConst doc);
     void onSyncComplete(int version, const String& hash);
     unsigned long getLastSyncTime();
     int getCurrentVersion();

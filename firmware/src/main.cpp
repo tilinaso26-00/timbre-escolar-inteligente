@@ -64,6 +64,11 @@ void setup() {
     scheduler.setHistoryLog(&historyLog);
     stateManager.init(&scheduleStore, &timeManager, &wifiManager, &logger);
 
+    // Tras cada sync el Scheduler debe reconstruir su lista del día: sin esto
+    // los punteros a eventos quedaban colgados (use-after-free) hasta el día
+    // siguiente y los timbres programados no se actualizaban.
+    scheduleStore.setChangeNotifier([]() { scheduler.forceRebuild(); });
+
     // setDependencies ANTES de init(): init() registra rutas y loguea con el
     // logger del wrapper; si el puntero sigue sin fijar, truena en null.
     webServer.setDependencies(&scheduleStore, &timeManager, &wifiManager, &relay, &logger, &stateManager, &historyLog);

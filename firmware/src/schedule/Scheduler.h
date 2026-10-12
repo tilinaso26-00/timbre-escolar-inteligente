@@ -29,11 +29,23 @@ private:
     ResolvedEvent* resolvedEvents = nullptr;
     int resolvedCount = 0;
     int resolvedCapacity = 0;
+
+    // Eventos parseados de excepciones de fecha / plantillas. Pertenecen al
+    // Scheduler (los base apuntan al ScheduleStore), por eso viven aquí hasta
+    // el próximo rebuild.
+    ScheduleEvent* overrideEvents = nullptr;
+    int overrideCount = 0;
+    int overrideCapacity = 0;
+
     String lastResolvedDate = "";
     std::function<void(const String&)> bellNotifier;
 
     void rebuildResolvedSchedule();
     void ensureResolvedCapacity(int needed);
+    void ensureOverrideCapacity(int needed);
+    void addResolvedEvent(ScheduleEvent* event, int dayOfWeek);
+    void appendEventsFromJson(const String& json, int dayOfWeek);
+    bool loadExceptionEvents(CalendarException* exc, const String& today, int dayOfWeek);
     int getExceptionPriority(const CalendarException* exc);
     bool isExceptionActiveToday(const CalendarException* exc, const String& today, int dayOfWeek);
     CalendarException* findMatchingException(const String& today, const String& journey, int dayOfWeek);
@@ -50,6 +62,7 @@ public:
     String getLastBellTime();
     String getLastExecutedEvent();
     void forceRebuild();
+    int getResolvedCount();
 
     // Historial propio del ESP32 (registrado en notifyBellExecuted)
     void setHistoryLog(HistoryLog* hl);
